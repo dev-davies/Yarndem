@@ -162,6 +162,24 @@ export const useChat = () => {
       return
     }
 
+    const existing = conversations.value.find((c) => c.contact.id === user.id)
+    if (existing) {
+      conversations.value = conversations.value.map((c) =>
+        c.contact.id === user.id
+          ? { ...c, updated_at: new Date().toISOString() }
+          : c
+      )
+    } else {
+      conversations.value = [
+        {
+          id: `conv-${user.id}`,
+          contact: user,
+          updated_at: new Date().toISOString(),
+        },
+        ...conversations.value,
+      ]
+    }
+
     if (user.public_key) {
       activePublicKey.value = user.public_key
       return

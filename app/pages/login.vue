@@ -174,7 +174,7 @@ const handleLogin = async () => {
 }
 
 definePageMeta({
-  layout: 'default'
+  layout: 'auth'
 })
 </script>
 

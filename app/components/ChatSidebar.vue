@@ -4,7 +4,7 @@
     <div class="p-6 space-y-6 sticky top-0 bg-yarn-bg/80 backdrop-blur-md z-10">
       <div class="flex justify-between items-center">
         <h1 class="text-2xl font-display font-semibold text-yarn-black tracking-tight">Messages</h1>
-        <button class="p-2 hover:bg-yarn-black/5 rounded-xl transition-colors">
+        <button class="p-2 hover:bg-yarn-black/5 rounded-xl transition-colors" @click="focusSearch">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-yarn-black/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
           </svg>
@@ -18,6 +18,7 @@
           </svg>
         </span>
         <input
+          ref="searchInput"
           v-model="searchQuery"
           type="text"
           placeholder="Search users by username..."
@@ -184,6 +185,11 @@ const {
 
 const { currentUser, logout } = useAuth()
 const isLoggingOut = ref(false)
+const searchInput = ref<HTMLInputElement | null>(null)
+
+const focusSearch = () => {
+  searchInput.value?.focus()
+}
 
 const onLogout = async () => {
   if (isLoggingOut.value) return
