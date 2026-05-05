@@ -1,8 +1,10 @@
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
   let binary = ''
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i])
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    binary += String.fromCharCode.apply(null, Array.from(chunk))
   }
   return window.btoa(binary)
 }
@@ -59,7 +61,7 @@ export const useCrypto = () => {
   const generateAccountKeys = async (
     password: string,
   ): Promise<GeneratedAccountKeys> => {
-    const keyPair = await subtle().generateKey(
+    const keyPair = (await subtle().generateKey(
       {
         name: 'RSA-OAEP',
         modulusLength: 2048,
@@ -68,17 +70,17 @@ export const useCrypto = () => {
       },
       true,
       ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
-    )
+    )) as CryptoKeyPair
 
     const salt = window.crypto.getRandomValues(new Uint8Array(16))
 
     const wrappingKey = await deriveWrappingKey(password, salt)
 
-    const wrappedPrivateKey = await subtle().wrapKey(
+    const wrappedPrivateKey = await window.crypto.subtle.wrapKey(
       'pkcs8',
       keyPair.privateKey,
       wrappingKey,
-      { name: 'AES-KW' },
+      'AES-KW',
     )
 
     const publicKeySpki = await subtle().exportKey('spki', keyPair.publicKey)
