@@ -1,14 +1,26 @@
 <template>
-  <div class="flex flex-col h-full bg-yarn-bg overflow-hidden">
+  <div v-if="!activeContact" class="flex items-center justify-center h-full bg-yarn-bg">
+    <div class="text-center px-8 max-w-sm">
+      <div class="mx-auto h-16 w-16 bg-yarn-surface border border-yarn-border flex items-center justify-center rounded-2xl mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-yarn-black/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+      </div>
+      <h2 class="text-lg font-display font-medium text-yarn-black tracking-tight">Select a conversation</h2>
+      <p class="text-sm text-yarn-black/50 mt-2">Pick a contact from the sidebar or search for someone new to start chatting securely.</p>
+    </div>
+  </div>
+
+  <div v-else class="flex flex-col h-full bg-yarn-bg overflow-hidden">
     <!-- Header -->
     <header class="p-6 border-b border-yarn-border bg-yarn-surface flex justify-between items-center z-10">
       <div class="flex items-center space-x-4">
         <div class="h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm">
-          AO
+          {{ contactInitials }}
         </div>
         <div>
-          <h2 class="text-base font-bold text-yarn-black">Amara Okafor</h2>
-          <p class="text-[10px] text-green-500 font-bold uppercase tracking-widest">Online</p>
+          <h2 class="text-base font-bold text-yarn-black">{{ contactDisplayName }}</h2>
+          <p class="text-[10px] text-yarn-black/40 font-bold uppercase tracking-widest">@{{ activeContact.username }}</p>
         </div>
       </div>
 
@@ -114,7 +126,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 interface Message {
   id: number
@@ -126,6 +138,25 @@ interface Message {
   fileName?: string
   fileSize?: string
 }
+
+const { activeContact } = useChat()
+
+const contactDisplayName = computed(() => {
+  if (!activeContact.value) return ''
+  return activeContact.value.display_name || activeContact.value.username
+})
+
+const contactInitials = computed(() => {
+  const name = contactDisplayName.value
+  if (!name) return '?'
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
+})
 
 const newMessage = ref('')
 const messages = ref<Message[]>([
