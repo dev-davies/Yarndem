@@ -10,7 +10,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        'whisper': {
+        'yarn': {
           black: '#121212',
           cream: '#FDFCF0',
           terracotta: '#C05A3E',

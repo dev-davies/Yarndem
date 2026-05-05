@@ -1,13 +1,13 @@
 <template>
-  <div class="min-h-screen bg-whisper-cream text-whisper-black font-sans selection:bg-whisper-terracotta selection:text-white">
+  <div class="min-h-screen bg-yarn-cream text-yarn-black font-sans selection:bg-yarn-terracotta selection:text-white">
     <!-- Navigation / Header (Optional placeholder) -->
     <header class="py-8 px-6 md:px-12 lg:px-24">
       <nav class="flex justify-between items-center max-w-7xl mx-auto">
-        <h1 class="text-2xl font-display font-semibold tracking-tight text-whisper-black">WhisperBox</h1>
+        <h1 class="text-2xl font-display font-semibold tracking-tight text-yarn-black">YarnDem</h1>
         <div class="hidden md:flex space-x-12 text-sm uppercase tracking-widest font-medium">
-          <a href="#" class="hover:text-whisper-terracotta transition-colors duration-300">Messages</a>
-          <a href="#" class="hover:text-whisper-terracotta transition-colors duration-300">Contacts</a>
-          <a href="#" class="hover:text-whisper-terracotta transition-colors duration-300">Vault</a>
+          <a href="#" class="hover:text-yarn-terracotta transition-colors duration-300">Messages</a>
+          <a href="#" class="hover:text-yarn-terracotta transition-colors duration-300">Contacts</a>
+          <a href="#" class="hover:text-yarn-terracotta transition-colors duration-300">Vault</a>
         </div>
       </nav>
     </header>
@@ -25,7 +25,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600&display=swap');
 
 body {
-  @apply bg-whisper-cream antialiased;
+  @apply bg-yarn-cream antialiased;
   margin: 0;
 }
 
