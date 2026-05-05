@@ -182,27 +182,32 @@ export const useChat = () => {
 
     if (user.public_key) {
       activePublicKey.value = user.public_key
+      activeContact.value = { ...user }
       return
     }
 
     isLoadingPublicKey.value = true
     try {
-      const response = await useApi<{ public_key: string } | { user: { public_key: string } }>(
-        `/users/${user.id}/public-key`,
+      const response = await useApi<{ id: string; username: string; display_name: string; public_key?: string }>(
+        `/users/${user.id}`,
         { method: 'GET' },
       )
 
-      const key = (response as { public_key?: string })?.public_key
-        ?? (response as { user?: { public_key?: string } })?.user?.public_key
-        ?? null
-
       if (activeContact.value?.id !== user.id) return
 
-      activePublicKey.value = key
-      if (key) {
-        activeContact.value = { ...user, public_key: key }
+      const fullProfile = { ...user, ...response }
+      activeContact.value = fullProfile
+      activePublicKey.value = response.public_key || null
+
+      if (response.public_key) {
+        conversations.value = conversations.value.map((c) =>
+          c.contact.id === user.id
+            ? { ...c, contact: fullProfile }
+            : c
+        )
       }
-    } catch {
+    } catch (err) {
+      console.error('Failed to fetch public key for user', err)
       if (activeContact.value?.id === user.id) {
         activePublicKey.value = null
       }

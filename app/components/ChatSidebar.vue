@@ -3,7 +3,10 @@
     <!-- Header with Search -->
     <div class="p-6 space-y-6 sticky top-0 bg-yarn-bg/80 backdrop-blur-md z-10">
       <div class="flex justify-between items-center">
-        <h1 class="text-2xl font-display font-semibold text-yarn-black tracking-tight">Messages</h1>
+        <div>
+          <h1 class="text-2xl font-display font-semibold text-yarn-black tracking-tight">Messages</h1>
+          <p v-if="currentUser" class="text-xs text-yarn-black/50 mt-1">Welcome, {{ currentUser.display_name || currentUser.username }}</p>
+        </div>
         <button class="p-2 hover:bg-yarn-black/5 rounded-xl transition-colors" @click="focusSearch">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-yarn-black/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />

@@ -323,14 +323,41 @@ export const useMessages = () => {
           `/users/${id}`,
           { method: 'GET' },
         )
-        setActiveContact(response)
+        
+        const existing = conversations.value.find((c) => c.contact.id === id)
+        if (existing) {
+          conversations.value = conversations.value.map((c) =>
+            c.contact.id === id
+              ? { ...c, contact: { ...c.contact, ...response }, updated_at: new Date().toISOString() }
+              : c
+          )
+        } else {
+          conversations.value = [
+            {
+              id: `conv-${id}`,
+              contact: response,
+              updated_at: new Date().toISOString(),
+            },
+            ...conversations.value,
+          ]
+        }
       } catch (err) {
         console.warn(`Failed to fetch user ${id}, using ID as fallback`, err)
-        setActiveContact({
-          id,
-          username: id,
-          display_name: id,
-        })
+        const existing = conversations.value.find((c) => c.contact.id === id)
+        if (!existing) {
+          conversations.value = [
+            {
+              id: `conv-${id}`,
+              contact: {
+                id,
+                username: id,
+                display_name: id,
+              },
+              updated_at: new Date().toISOString(),
+            },
+            ...conversations.value,
+          ]
+        }
       }
     }
   }

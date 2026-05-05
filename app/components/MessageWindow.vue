@@ -1,13 +1,26 @@
 <template>
   <div v-if="!activeContact" class="flex items-center justify-center h-full bg-yarn-bg">
-    <div class="text-center px-8 max-w-sm">
-      <div class="mx-auto h-16 w-16 bg-yarn-surface border border-yarn-border flex items-center justify-center rounded-2xl mb-6">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 text-yarn-black/40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <div v-if="currentUser" class="text-center px-8 max-w-md">
+      <div class="mx-auto h-20 w-20 bg-yarn-black flex items-center justify-center rounded-2xl mb-8 transform -rotate-3 hover:rotate-0 transition-transform duration-500">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-yarn-cream" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
         </svg>
       </div>
-      <h2 class="text-lg font-display font-medium text-yarn-black tracking-tight">Select a conversation</h2>
-      <p class="text-sm text-yarn-black/50 mt-2">Pick a contact from the sidebar or search for someone new to start chatting securely.</p>
+      <h2 class="text-2xl font-display font-semibold text-yarn-black tracking-tight mb-3">
+        Welcome back, {{ currentUser.display_name || currentUser.username }}!
+      </h2>
+      <p class="text-sm text-yarn-black/60 leading-relaxed">
+        Select a contact from the sidebar or search for someone new to start a secure, end-to-end encrypted conversation.
+      </p>
+    </div>
+    <div v-else class="text-center px-8 max-w-md">
+      <div class="mx-auto h-20 w-20 bg-yarn-surface border border-yarn-border flex items-center justify-center rounded-2xl mb-8">
+        <svg class="animate-spin h-8 w-8 text-yarn-black/40" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+        </svg>
+      </div>
+      <p class="text-sm text-yarn-black/50">Loading your account...</p>
     </div>
   </div>
 
@@ -153,6 +166,7 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 
 const { activeContact, activePublicKey, isLoadingPublicKey } = useChat()
+const { currentUser } = useAuth()
 const {
   messages,
   isContactTyping,
@@ -191,11 +205,11 @@ const contactInitials = computed(() => {
     .toUpperCase()
 })
 
-const canSend = computed(() => !!activePublicKey.value)
+const canSend = computed(() => !!activePublicKey.value && !isLoadingPublicKey.value)
 
 const inputPlaceholder = computed(() => {
   if (isLoadingPublicKey.value) return 'Fetching recipient key…'
-  if (!canSend.value) return 'Recipient public key missing — cannot send'
+  if (!activePublicKey.value) return 'Recipient public key missing — cannot send'
   return 'Type a secure message...'
 })
 
