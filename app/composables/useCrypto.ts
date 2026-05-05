@@ -100,6 +100,15 @@ export interface EncryptedMessagePayload {
   encryptedKeyForSelf: string
 }
 
+export interface EncryptedFileResult {
+  ciphertextBase64: string
+  aesKey: CryptoKey
+  iv: Uint8Array
+  mimeType: string
+  name: string
+  size: number
+}
+
 export const useCrypto = () => {
   const subtle = (): SubtleCrypto => {
     if (typeof window === 'undefined' || !window.crypto?.subtle) {
@@ -356,6 +365,100 @@ export const useCrypto = () => {
     return new TextDecoder().decode(plaintextBuffer)
   }
 
+  const encryptFile = async (file: File): Promise<EncryptedFileResult> => {
+    const buffer = await file.arrayBuffer()
+
+    const aesKey = await subtle().generateKey(
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['encrypt', 'decrypt'],
+    )
+
+    const iv = window.crypto.getRandomValues(new Uint8Array(IV_LENGTH))
+
+    const ciphertext = await subtle().encrypt(
+      { name: 'AES-GCM', iv },
+      aesKey,
+      buffer,
+    )
+
+    return {
+      ciphertextBase64: arrayBufferToBase64(ciphertext),
+      aesKey,
+      iv,
+      mimeType: file.type || 'application/octet-stream',
+      name: file.name,
+      size: file.size,
+    }
+  }
+
+  const decryptFile = async (
+    encryptedBase64: string,
+    aesKey: CryptoKey,
+    iv: Uint8Array,
+    mimeType: string,
+  ): Promise<string> => {
+    const ciphertext = base64ToArrayBuffer(encryptedBase64)
+
+    const plaintext = await subtle().decrypt(
+      { name: 'AES-GCM', iv },
+      aesKey,
+      ciphertext,
+    )
+
+    const blob = new Blob([plaintext], { type: mimeType || 'application/octet-stream' })
+    return URL.createObjectURL(blob)
+  }
+
+  const exportRawAesKey = async (key: CryptoKey): Promise<ArrayBuffer> => {
+    return subtle().exportKey('raw', key)
+  }
+
+  const importRawAesKey = async (raw: ArrayBuffer): Promise<CryptoKey> => {
+    return subtle().importKey(
+      'raw',
+      raw,
+      { name: 'AES-GCM', length: 256 },
+      true,
+      ['encrypt', 'decrypt'],
+    )
+  }
+
+  const wrapAesKeyForRecipients = async (
+    aesKey: CryptoKey,
+    recipientPublicKeyBase64: string,
+  ): Promise<{ encryptedKey: string; encryptedKeyForSelf: string }> => {
+    if (!activePublicKey) {
+      throw new Error('Your own public key is not loaded. Please log in again.')
+    }
+    const rawAesKey = await exportRawAesKey(aesKey)
+    const recipientKey = await importPublicKey(recipientPublicKeyBase64)
+
+    const [encryptedKey, encryptedKeyForSelf] = await Promise.all([
+      subtle().encrypt({ name: 'RSA-OAEP' }, recipientKey, rawAesKey),
+      subtle().encrypt({ name: 'RSA-OAEP' }, activePublicKey, rawAesKey),
+    ])
+
+    return {
+      encryptedKey: arrayBufferToBase64(encryptedKey),
+      encryptedKeyForSelf: arrayBufferToBase64(encryptedKeyForSelf),
+    }
+  }
+
+  const unwrapAesKey = async (
+    wrappedBase64: string,
+  ): Promise<CryptoKey> => {
+    if (!activePrivateKey) {
+      throw new Error('Private key not loaded. Please log in to decrypt.')
+    }
+    const rawAesKey = await subtle().decrypt(
+      { name: 'RSA-OAEP' },
+      activePrivateKey,
+      base64ToArrayBuffer(wrappedBase64),
+    )
+    return importRawAesKey(rawAesKey)
+  }
+
   return {
     generateAccountKeys,
     unwrapAccountPrivateKey,
@@ -369,6 +472,10 @@ export const useCrypto = () => {
     clearSessionKey,
     encryptMessage,
     decryptMessage,
+    encryptFile,
+    decryptFile,
+    wrapAesKeyForRecipients,
+    unwrapAesKey,
     arrayBufferToBase64,
     base64ToArrayBuffer,
   }
