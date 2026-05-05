@@ -33,14 +33,23 @@ export const useMessages = () => {
   const accessToken = useCookie<string | null>('access_token')
   const { encryptMessage, decryptMessage, getActivePublicKey, setActivePublicKey } = useCrypto()
   const { currentUser } = useAuth()
+  const { saveLocalMessage, getLocalMessages } = useStorage()
+
+  const conversationKey = (otherUserId: string): string => {
+    const me = currentUser.value?.id || 'me'
+    return [me, otherUserId].sort().join(':')
+  }
 
   const messages = useState<DecryptedMessage[]>('messages:list', () => [])
   const ws = useState<WebSocket | null>('messages:ws', () => null)
   const isConnected = useState<boolean>('messages:wsConnected', () => false)
   const activeConversationUserId = useState<string | null>('messages:activeUser', () => null)
+  const isContactTyping = useState<boolean>('messages:isContactTyping', () => false)
 
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let manuallyClosed = false
+  let typingTimeout: ReturnType<typeof setTimeout> | null = null
+  let lastTypingSentAt = 0
 
   const isMine = (senderId: string): boolean => {
     return !!currentUser.value && currentUser.value.id === senderId
@@ -108,9 +117,49 @@ export const useMessages = () => {
         return
       }
 
+      if (frame.type === 'typing') {
+        const payload = (frame.payload || frame.data) as { sender_id?: string } | undefined
+        const senderId = payload?.sender_id
+        const activeId = activeConversationUserId.value
+        if (!senderId || !activeId || senderId !== activeId) return
+
+        isContactTyping.value = true
+        if (typingTimeout) clearTimeout(typingTimeout)
+        typingTimeout = setTimeout(() => {
+          isContactTyping.value = false
+          typingTimeout = null
+        }, 3000)
+        return
+      }
+
+      if (frame.type === 'read') {
+        const payload = (frame.payload || frame.data) as
+          | { message_id?: string; reader_id?: string }
+          | undefined
+        const messageId = payload?.message_id
+        if (!messageId) return
+
+        const idx = messages.value.findIndex((m) => m.id === messageId)
+        if (idx === -1) return
+        const next = [...messages.value]
+        next[idx] = { ...next[idx], status: 'read' }
+        messages.value = next
+        return
+      }
+
       if (frame.type === 'message.receive') {
         const envelope = (frame.payload || frame.data) as EncryptedMessageEnvelope | undefined
         if (!envelope) return
+
+        const myId = currentUser.value?.id
+        const otherUserId = envelope.sender_id === myId ? envelope.recipient_id : envelope.sender_id
+        const decrypted = await decryptEnvelope(envelope)
+
+        try {
+          await saveLocalMessage(conversationKey(otherUserId), decrypted as never)
+        } catch (err) {
+          console.error('Failed to archive incoming message', err)
+        }
 
         const activeId = activeConversationUserId.value
         const involvesActive =
@@ -118,7 +167,6 @@ export const useMessages = () => {
           (envelope.sender_id === activeId || envelope.recipient_id === activeId)
         if (!involvesActive) return
 
-        const decrypted = await decryptEnvelope(envelope)
         if (messages.value.some((m) => m.id === decrypted.id)) return
         messages.value = [...messages.value, decrypted]
       }
@@ -159,26 +207,92 @@ export const useMessages = () => {
     }
 
     activeConversationUserId.value = userId
+    const convoKey = conversationKey(userId)
 
-    const response = await useApi<EncryptedMessageEnvelope[] | { messages: EncryptedMessageEnvelope[] }>(
-      `/conversations/${userId}/messages`,
-      { method: 'GET' },
-    )
+    const cached = await getLocalMessages(convoKey)
+    if (cached.length > 0) {
+      messages.value = cached as DecryptedMessage[]
+    } else {
+      messages.value = []
+    }
 
-    const list = Array.isArray(response) ? response : response?.messages ?? []
+    const cachedIds = new Set(cached.map((m) => m.id))
 
-    const decrypted = await Promise.all(list.map((env) => decryptEnvelope(env)))
-    decrypted.sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-    )
+    try {
+      const response = await useApi<EncryptedMessageEnvelope[] | { messages: EncryptedMessageEnvelope[] }>(
+        `/conversations/${userId}/messages`,
+        { method: 'GET' },
+      )
 
-    messages.value = decrypted
-    return decrypted
+      const list = Array.isArray(response) ? response : response?.messages ?? []
+      const fresh = list.filter((env) => !cachedIds.has(env.id))
+      if (fresh.length === 0) {
+        return messages.value
+      }
+
+      const decrypted = await Promise.all(fresh.map((env) => decryptEnvelope(env)))
+
+      await Promise.all(
+        decrypted.map((m) => saveLocalMessage(convoKey, m as never)),
+      )
+
+      const merged = [...messages.value, ...decrypted]
+        .filter((m, idx, arr) => arr.findIndex((x) => x.id === m.id) === idx)
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+
+      messages.value = merged
+      return merged
+    } catch (err) {
+      console.error('Failed to fetch fresh history', err)
+      return messages.value
+    }
   }
 
   const clearMessages = () => {
     messages.value = []
     activeConversationUserId.value = null
+    isContactTyping.value = false
+    if (typingTimeout) {
+      clearTimeout(typingTimeout)
+      typingTimeout = null
+    }
+  }
+
+  const sendTypingEvent = (toUserId: string): void => {
+    const socket = ws.value
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+
+    const now = Date.now()
+    if (now - lastTypingSentAt < 2000) return
+    lastTypingSentAt = now
+
+    try {
+      socket.send(
+        JSON.stringify({
+          type: 'typing',
+          payload: { recipient_id: toUserId },
+        }),
+      )
+    } catch (err) {
+      console.warn('Failed to send typing event', err)
+    }
+  }
+
+  const sendReadReceipt = (messageId: string, senderId: string): void => {
+    const socket = ws.value
+    if (!socket || socket.readyState !== WebSocket.OPEN) return
+    if (!messageId || !senderId) return
+
+    try {
+      socket.send(
+        JSON.stringify({
+          type: 'read',
+          payload: { message_id: messageId, sender_id: senderId },
+        }),
+      )
+    } catch (err) {
+      console.warn('Failed to send read receipt', err)
+    }
   }
 
   const sendMessage = async (
@@ -212,6 +326,7 @@ export const useMessages = () => {
       encrypted_key_for_self: payload.encryptedKeyForSelf,
     }
 
+    const convoKey = conversationKey(toUserId)
     const optimistic: DecryptedMessage = {
       id: `local-${Date.now()}`,
       senderId: currentUser.value?.id || 'me',
@@ -227,6 +342,7 @@ export const useMessages = () => {
     if (socket && socket.readyState === WebSocket.OPEN) {
       try {
         socket.send(JSON.stringify({ type: 'message.send', payload: wireBody }))
+        await saveLocalMessage(convoKey, optimistic as never)
         return optimistic
       } catch (err) {
         console.warn('WS send failed, falling back to REST.', err)
@@ -240,8 +356,9 @@ export const useMessages = () => {
       })
 
       const idx = messages.value.findIndex((m) => m.id === optimistic.id)
+      let finalMessage: DecryptedMessage = optimistic
       if (idx !== -1) {
-        const replacement: DecryptedMessage = {
+        finalMessage = {
           ...optimistic,
           id: saved.id,
           createdAt: saved.created_at,
@@ -249,11 +366,11 @@ export const useMessages = () => {
           status: 'delivered',
         }
         const next = [...messages.value]
-        next[idx] = replacement
+        next[idx] = finalMessage
         messages.value = next
-        return replacement
       }
-      return optimistic
+      await saveLocalMessage(convoKey, finalMessage as never)
+      return finalMessage
     } catch (err) {
       const idx = messages.value.findIndex((m) => m.id === optimistic.id)
       if (idx !== -1) {
@@ -270,10 +387,13 @@ export const useMessages = () => {
     ws,
     isConnected,
     activeConversationUserId,
+    isContactTyping,
     connectWS,
     disconnectWS,
     loadHistory,
     clearMessages,
     sendMessage,
+    sendTypingEvent,
+    sendReadReceipt,
   }
 }

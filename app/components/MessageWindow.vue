@@ -47,7 +47,10 @@
       <div
         v-for="message in messages"
         :key="message.id"
-        class="flex"
+        :data-message-id="message.id"
+        :data-sender-id="message.senderId"
+        :data-sent-by-self="message.sentBySelf ? 'true' : 'false'"
+        class="flex message-row"
         :class="message.sentBySelf ? 'justify-end' : 'justify-start'"
       >
         <div
@@ -62,13 +65,43 @@
           <p class="text-sm leading-relaxed whitespace-pre-wrap break-words">{{ message.text }}</p>
 
           <div
-            class="mt-2 text-[9px] uppercase tracking-tighter opacity-50 flex items-center gap-2"
+            class="mt-2 text-[9px] uppercase tracking-tighter opacity-50 flex items-center gap-1.5"
             :class="message.sentBySelf ? 'justify-end' : 'justify-start'"
           >
             <span>{{ formatTime(message.createdAt) }}</span>
-            <span v-if="message.sentBySelf && message.status === 'sent'">• Sent</span>
             <span v-if="message.sentBySelf && message.status === 'failed'" class="text-red-300">• Failed</span>
+            <span
+              v-else-if="message.sentBySelf"
+              class="inline-flex items-center"
+              :class="message.status === 'read' ? 'text-sky-400 opacity-100' : 'opacity-70'"
+              :title="message.status === 'read' ? 'Read' : message.status === 'delivered' ? 'Delivered' : 'Sent'"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" viewBox="0 0 16 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 6.5L4.5 10L11 2" />
+              </svg>
+              <svg
+                v-if="message.status === 'delivered' || message.status === 'read'"
+                xmlns="http://www.w3.org/2000/svg"
+                class="h-3 w-3 -ml-1.5"
+                viewBox="0 0 16 12"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M1 6.5L4.5 10L11 2" />
+              </svg>
+            </span>
           </div>
+        </div>
+      </div>
+
+      <div v-if="isContactTyping" class="flex justify-start">
+        <div class="bg-yarn-surface border border-yarn-border rounded-2xl rounded-bl-none px-4 py-3 flex items-center gap-1">
+          <span class="typing-dot" />
+          <span class="typing-dot typing-dot-2" />
+          <span class="typing-dot typing-dot-3" />
         </div>
       </div>
     </div>
@@ -98,6 +131,7 @@
             :placeholder="inputPlaceholder"
             :disabled="!canSend || isSending || isLoadingPublicKey"
             class="w-full bg-yarn-bg border border-yarn-border rounded-full px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-yarn-black/5 focus:border-yarn-black transition-all disabled:opacity-60"
+            @input="onTyping"
           />
         </div>
 
@@ -119,7 +153,20 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 
 const { activeContact, activePublicKey, isLoadingPublicKey } = useChat()
-const { messages, loadHistory, clearMessages, sendMessage, connectWS, disconnectWS } = useMessages()
+const {
+  messages,
+  isContactTyping,
+  loadHistory,
+  clearMessages,
+  sendMessage,
+  connectWS,
+  disconnectWS,
+  sendTypingEvent,
+  sendReadReceipt,
+} = useMessages()
+
+const ackedReadIds = ref<Set<string>>(new Set())
+let readObserver: IntersectionObserver | null = null
 
 const newMessage = ref('')
 const isSending = ref(false)
@@ -169,6 +216,7 @@ watch(
   activeContact,
   async (contact) => {
     sendError.value = ''
+    ackedReadIds.value = new Set()
     if (!contact) {
       clearMessages()
       return
@@ -193,6 +241,33 @@ watch(
   () => messages.value.length,
   () => {
     scrollToBottom()
+  },
+)
+
+const onTyping = () => {
+  if (activeContact.value) {
+    sendTypingEvent(activeContact.value.id)
+  }
+}
+
+const ackVisibleReads = () => {
+  if (!readObserver || !scrollEl.value) return
+  const rows = scrollEl.value.querySelectorAll<HTMLElement>(
+    '.message-row[data-sent-by-self="false"]',
+  )
+  rows.forEach((row) => {
+    const id = row.dataset.messageId
+    if (id && !ackedReadIds.value.has(id)) {
+      readObserver!.observe(row)
+    }
+  })
+}
+
+watch(
+  () => messages.value.map((m) => m.id).join('|'),
+  async () => {
+    await nextTick()
+    ackVisibleReads()
   },
 )
 
@@ -225,10 +300,33 @@ const onSend = async () => {
 
 onMounted(() => {
   connectWS()
+
+  if (typeof IntersectionObserver !== 'undefined' && scrollEl.value) {
+    readObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          const el = entry.target as HTMLElement
+          const id = el.dataset.messageId
+          const senderId = el.dataset.senderId
+          if (!id || !senderId || ackedReadIds.value.has(id)) continue
+          ackedReadIds.value.add(id)
+          sendReadReceipt(id, senderId)
+          readObserver!.unobserve(el)
+        }
+      },
+      { root: scrollEl.value, threshold: 0.6 },
+    )
+    ackVisibleReads()
+  }
 })
 
 onBeforeUnmount(() => {
   disconnectWS()
+  if (readObserver) {
+    readObserver.disconnect()
+    readObserver = null
+  }
 })
 </script>
 
@@ -248,5 +346,30 @@ onBeforeUnmount(() => {
 
 img {
   display: block;
+}
+
+.typing-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background-color: rgba(0, 0, 0, 0.3);
+  animation: typing-bounce 1.2s infinite ease-in-out;
+}
+.typing-dot-2 {
+  animation-delay: 0.15s;
+}
+.typing-dot-3 {
+  animation-delay: 0.3s;
+}
+
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
 }
 </style>
