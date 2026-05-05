@@ -97,24 +97,23 @@ export const useApi = async <T = unknown>(
 
     // If 401 and not an auth endpoint, try to refresh or logout
     if (status === 401 && !skipAuth) {
-      console.log('[useApi] 401 Detected, attempting token refresh...')
-      const newToken = await performRefresh()
+      console.warn('[useApi] 401 Detected, attempting token refresh...')
       
-      if (newToken) {
-        try {
+      try {
+        const newToken = await performRefresh()
+        
+        if (newToken) {
+          console.log('[useApi] Refresh successful, retrying request...')
           // Retry with new token
           return await $fetch<T>(request, buildOptions(newToken))
-        } catch (retryErr) {
-          const retryStatus = (retryErr as { statusCode?: number; status?: number })?.statusCode
-            ?? (retryErr as { status?: number })?.status
-          if (retryStatus === 401) {
-            await handleAuthFailure()
-          }
-          throw retryErr
+        } else {
+          console.error('[useApi] Refresh returned no token, forcing logout')
+          await handleAuthFailure()
         }
-      } else {
-        // Refresh failed, logout
+      } catch (refreshErr) {
+        console.error('[useApi] Token refresh failed, redirecting to login:', refreshErr)
         await handleAuthFailure()
+        throw refreshErr
       }
     }
 

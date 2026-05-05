@@ -13,9 +13,15 @@ const { loadSidebar } = useMessages()
 
 if (accessToken.value && !currentUser.value) {
   await useAsyncData('auth:rehydrate', async () => {
-    await fetchMe()
-    if (currentUser.value) {
-      await loadSidebar()
+    try {
+      const profile = await fetchMe()
+      if (profile) {
+        await loadSidebar()
+      }
+      return profile || null
+    } catch (e) {
+      console.error('[App] Auth rehydration failed:', e)
+      return null
     }
   })
 } else if (currentUser.value) {
