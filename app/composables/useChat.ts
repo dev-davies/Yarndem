@@ -197,34 +197,39 @@ export const useChat = () => {
       return
     }
 
-    console.log('[setActiveContact] Public key missing, fetching full profile from API...')
+    console.log('[setActiveContact] Public key missing, fetching from API...')
     isLoadingPublicKey.value = true
     try {
-      const response = await useApi<{ id: string; username: string; display_name: string; public_key?: string }>(
-        `/users/${user.id}`,
+      const response = await useApi<{ public_key: string }>(
+        `/users/${user.id}/public-key`,
         { method: 'GET' },
       )
 
-      console.log('[setActiveContact] API response:', { id: response.id, has_public_key: !!response.public_key })
+      console.log('[setActiveContact] API response has key:', !!response?.public_key)
 
       if (activeContact.value?.id !== user.id) {
         console.log('[setActiveContact] User changed during fetch, aborting')
         return
       }
 
-      // Update activeContact with the full profile including the public_key
-      const fullProfile = { ...user, ...response }
-      activeContact.value = fullProfile
-      activePublicKey.value = response.public_key || null
+      if (response && response.public_key) {
+        // Update activeContact with the full profile including the public_key
+        const fullProfile = { ...user, public_key: response.public_key }
+        activeContact.value = fullProfile
+        activePublicKey.value = response.public_key
 
-      console.log('[setActiveContact] Updated activePublicKey:', !!activePublicKey.value)
+        console.log('[setActiveContact] Updated activePublicKey:', !!activePublicKey.value)
 
-      // Sync the updated profile back into the conversations list
-      conversations.value = conversations.value.map((c) =>
-        (c.contact?.id === user.id || c.id === user.id)
-          ? { ...c, contact: fullProfile }
-          : c
-      )
+        // Sync the updated profile back into the conversations list
+        conversations.value = conversations.value.map((c) =>
+          (c.contact?.id === user.id || c.id === user.id)
+            ? { ...c, contact: fullProfile }
+            : c
+        )
+      } else {
+        console.warn('[setActiveContact] API returned success but no public key')
+        activePublicKey.value = null
+      }
     } catch (err) {
       console.error('[setActiveContact] Failed to fetch public key:', err)
       if (activeContact.value?.id === user.id) {
