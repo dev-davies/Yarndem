@@ -332,14 +332,27 @@ export const useCrypto = () => {
   const decryptMessage = async (
     payload: EncryptedMessagePayload,
     sentBySelf: boolean,
+    messageId?: string,
   ): Promise<string> => {
+    const keyField = sentBySelf ? 'encryptedKeyForSelf' : 'encryptedKey'
+    
+    console.log(`[useCrypto] Decrypting message ${messageId || 'unknown'}:`, {
+      sentBySelf,
+      useKeyField: keyField,
+      hasActivePrivateKey: !!activePrivateKey,
+      payloadKeys: {
+        hasEncKey: !!payload.encryptedKey,
+        hasEncKeySelf: !!payload.encryptedKeyForSelf
+      }
+    })
+
     if (!activePrivateKey) {
       throw new Error('Private key not loaded. Please log in to decrypt messages.')
     }
 
     const wrappedKey = sentBySelf ? payload.encryptedKeyForSelf : payload.encryptedKey
     if (!wrappedKey) {
-      throw new Error('Missing encrypted message key for this recipient.')
+      throw new Error(`Missing ${keyField} in payload.`)
     }
 
     const rawMessageKey = await subtle().decrypt(

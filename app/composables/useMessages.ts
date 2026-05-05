@@ -56,11 +56,11 @@ export const useMessages = () => {
     return !!currentUser.value && currentUser.value.id === senderId
   }
 
-  const toEncryptedPayload = (envelope: EncryptedMessageEnvelope) => ({
+  const toEncryptedPayload = (envelope: EncryptedMessageEnvelope): EncryptedMessagePayload => ({
     ciphertext: envelope.ciphertext,
     iv: envelope.iv,
     encryptedKey: envelope.encrypted_key,
-    encryptedKeyForSelf: envelope.encrypted_key_for_self || envelope.encrypted_key,
+    encryptedKeyForSelf: envelope.encrypted_key_for_self || '',
   })
 
   const decryptEnvelope = async (
@@ -69,9 +69,11 @@ export const useMessages = () => {
     const sentBySelf = isMine(envelope.sender_id)
     let text: string
     try {
-      text = await decryptMessage(toEncryptedPayload(envelope), sentBySelf)
-    } catch {
-      text = '[Unable to decrypt message]'
+      text = await decryptMessage(toEncryptedPayload(envelope), sentBySelf, envelope.id)
+    } catch (err) {
+      console.error(`[useMessages] Decryption failure for message ${envelope.id}:`, err)
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      text = `[Unable to decrypt message: ${errorMsg}]`
     }
 
     return {
@@ -142,7 +144,7 @@ export const useMessages = () => {
         const idx = messages.value.findIndex((m) => m.id === messageId)
         if (idx === -1) return
         const next = [...messages.value]
-        next[idx] = { ...next[idx], status: 'read' }
+        next[idx] = { ...next[idx], status: 'read' } as DecryptedMessage
         messages.value = next
         return
       }
