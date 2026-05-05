@@ -317,12 +317,16 @@ export const useMessages = () => {
 
     const payload = await encryptMessage(trimmed, recipientPublicKey)
 
-    const wireBody = {
-      recipient_id: toUserId,
+    const encryptedPayload = JSON.stringify({
       ciphertext: payload.ciphertext,
       iv: payload.iv,
       encrypted_key: payload.encryptedKey,
       encrypted_key_for_self: payload.encryptedKeyForSelf,
+    })
+
+    const wireBody = {
+      to_user_id: toUserId,
+      payload: encryptedPayload,
     }
 
     const convoKey = conversationKey(toUserId)
@@ -340,7 +344,7 @@ export const useMessages = () => {
     const socket = ws.value
     if (socket && socket.readyState === WebSocket.OPEN) {
       try {
-        socket.send(JSON.stringify({ type: 'message.send', payload: wireBody }))
+        socket.send(JSON.stringify({ type: 'message.send', payload: { to_user_id: toUserId, payload: encryptedPayload } }))
         await saveLocalMessage(convoKey, optimistic as never)
         return optimistic
       } catch (err) {
