@@ -218,8 +218,8 @@ const resetSearch = () => {
   clearSearch()
 }
 
-const onSelectUser = (user: Contact) => {
-  setActiveContact(user)
+const onSelectUser = async (user: Contact) => {
+  await setActiveContact(user)
   if (hasQuery.value) {
     resetSearch()
   }

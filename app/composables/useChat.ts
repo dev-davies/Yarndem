@@ -166,7 +166,7 @@ export const useChat = () => {
     if (existing) {
       conversations.value = conversations.value.map((c) =>
         c.contact.id === user.id
-          ? { ...c, updated_at: new Date().toISOString() }
+          ? { ...c, contact: { ...c.contact, ...user }, updated_at: new Date().toISOString() }
           : c
       )
     } else {

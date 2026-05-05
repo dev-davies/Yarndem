@@ -33,7 +33,8 @@ export const useMessages = () => {
   const accessToken = useCookie<string | null>('access_token')
   const { encryptMessage, decryptMessage, getActivePublicKey, setActivePublicKey } = useCrypto()
   const { currentUser } = useAuth()
-  const { saveLocalMessage, getLocalMessages } = useStorage()
+  const { saveLocalMessage, getLocalMessages, getRecentContacts } = useStorage()
+  const { conversations, setActiveContact } = useChat()
 
   const conversationKey = (otherUserId: string): string => {
     const me = currentUser.value?.id || 'me'
@@ -158,6 +159,24 @@ export const useMessages = () => {
           await saveLocalMessage(conversationKey(otherUserId), decrypted as never)
         } catch (err) {
           console.error('Failed to archive incoming message', err)
+        }
+
+        const existingConvo = conversations.value.find((c) => c.contact.id === otherUserId)
+        if (!existingConvo) {
+          try {
+            const userProfile = await useApi<{ id: string; username: string; display_name: string; public_key?: string }>(
+              `/users/${otherUserId}`,
+              { method: 'GET' },
+            )
+            setActiveContact(userProfile)
+          } catch (err) {
+            console.warn(`Failed to fetch user profile for ${otherUserId}`, err)
+            setActiveContact({
+              id: otherUserId,
+              username: otherUserId,
+              display_name: otherUserId,
+            })
+          }
         }
 
         const activeId = activeConversationUserId.value
@@ -294,6 +313,28 @@ export const useMessages = () => {
     }
   }
 
+  const loadSidebar = async (): Promise<void> => {
+    const contactIds = await getRecentContacts()
+    if (contactIds.length === 0) return
+
+    for (const id of contactIds) {
+      try {
+        const response = await useApi<{ id: string; username: string; display_name: string; public_key?: string }>(
+          `/users/${id}`,
+          { method: 'GET' },
+        )
+        setActiveContact(response)
+      } catch (err) {
+        console.warn(`Failed to fetch user ${id}, using ID as fallback`, err)
+        setActiveContact({
+          id,
+          username: id,
+          display_name: id,
+        })
+      }
+    }
+  }
+
   const sendMessage = async (
     toUserId: string,
     plaintext: string,
@@ -396,5 +437,6 @@ export const useMessages = () => {
     sendMessage,
     sendTypingEvent,
     sendReadReceipt,
+    loadSidebar,
   }
 }

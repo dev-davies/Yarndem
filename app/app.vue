@@ -9,9 +9,17 @@
 
 <script setup lang="ts">
 const { accessToken, currentUser, fetchMe } = useAuth()
+const { loadSidebar } = useMessages()
 
 if (accessToken.value && !currentUser.value) {
-  await useAsyncData('auth:rehydrate', () => fetchMe())
+  await useAsyncData('auth:rehydrate', async () => {
+    await fetchMe()
+    if (currentUser.value) {
+      await loadSidebar()
+    }
+  })
+} else if (currentUser.value) {
+  loadSidebar()
 }
 </script>
 

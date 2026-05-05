@@ -121,11 +121,41 @@ export const useStorage = () => {
     }
   }
 
+  const getRecentContacts = async (): Promise<string[]> => {
+    if (!isAvailable()) return []
+    try {
+      const db = await openArchive()
+      const items = await new Promise<StoredMessage[]>((resolve, reject) => {
+        const tx = db.transaction(MESSAGE_STORE, 'readonly')
+        const req = tx.objectStore(MESSAGE_STORE).getAll()
+        req.onsuccess = () => resolve((req.result as StoredMessage[]) || [])
+        req.onerror = () => reject(req.error)
+      })
+      db.close()
+
+      const contactIds = new Set<string>()
+      items.forEach((msg) => {
+        if (!msg.sentBySelf && msg.senderId) {
+          contactIds.add(msg.senderId)
+        }
+        if (msg.sentBySelf && msg.recipientId) {
+          contactIds.add(msg.recipientId)
+        }
+      })
+
+      return Array.from(contactIds)
+    } catch (err) {
+      console.error('Failed to get recent contacts', err)
+      return []
+    }
+  }
+
   return {
     saveLocalMessage,
     getLocalMessages,
     deleteLocalMessage,
     clearLocalArchive,
+    getRecentContacts,
   }
 }
 
