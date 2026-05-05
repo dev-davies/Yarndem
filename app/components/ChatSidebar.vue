@@ -64,22 +64,24 @@
       <div class="space-y-1">
         <div
           v-for="user in searchResults"
-          :key="user.id"
+          :key="user?.id || Math.random()"
           class="relative flex items-center p-4 rounded-2xl cursor-pointer transition-all duration-300 group"
           :class="[
-            isActive(user)
+            user && isActive(user)
               ? 'bg-yarn-surface border-l-4 border-yarn-terracotta shadow-sm shadow-yarn-black/5'
               : 'hover:bg-yarn-surface/50 border-l-4 border-transparent'
           ]"
-          @click="() => { console.log('[ChatSidebar] Search result clicked:', user); onSelectUser(user); }"
+          @click="() => { if (user) { console.log('[ChatSidebar] Search result clicked:', user); onSelectUser(user); } }"
         >
-          <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm flex-shrink-0">
-            {{ getInitials(user.display_name || user.username) }}
-          </div>
-          <div class="ml-4 flex-1 min-w-0">
-            <h3 class="text-sm font-bold text-yarn-black truncate">{{ user.display_name || user.username }}</h3>
-            <p class="text-xs text-yarn-black/40 truncate mt-1">@{{ user.username }}</p>
-          </div>
+          <template v-if="user && user.id">
+            <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm flex-shrink-0">
+              {{ getInitials(user.display_name || user.username) }}
+            </div>
+            <div class="ml-4 flex-1 min-w-0">
+              <h3 class="text-sm font-bold text-yarn-black truncate">{{ user.display_name || user.username }}</h3>
+              <p class="text-xs text-yarn-black/40 truncate mt-1">@{{ user.username }}</p>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -106,37 +108,39 @@
       <div v-else class="space-y-1">
         <div
           v-for="conversation in conversations"
-          :key="conversation.id"
+          :key="conversation?.id || Math.random()"
           class="relative flex items-center p-4 rounded-2xl cursor-pointer transition-all duration-300 group"
           :class="[
-            isActive(conversation.contact)
+            conversation?.contact && isActive(conversation.contact)
               ? 'bg-yarn-surface border-l-4 border-yarn-terracotta shadow-sm shadow-yarn-black/5'
               : 'hover:bg-yarn-surface/50 border-l-4 border-transparent'
           ]"
-          @click="() => { console.log('[ChatSidebar] Conversation clicked:', conversation.contact); onSelectUser(conversation.contact); }"
+          @click="() => { if (conversation?.contact) { console.log('[ChatSidebar] Conversation clicked:', conversation.contact); onSelectUser(conversation.contact); } }"
         >
-          <!-- Avatar -->
-          <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm flex-shrink-0">
-            {{ getInitials(conversation.contact.display_name || conversation.contact.username) }}
-          </div>
-
-          <!-- Content -->
-          <div class="ml-4 flex-1 min-w-0">
-            <div class="flex justify-between items-baseline">
-              <h3 class="text-sm font-bold text-yarn-black truncate">
-                {{ conversation.contact.display_name || conversation.contact.username }}
-              </h3>
-              <span class="text-[10px] font-medium text-yarn-black/40 uppercase tracking-tighter">
-                {{ formatTime(conversation.last_message?.created_at || conversation.updated_at) }}
-              </span>
+          <template v-if="conversation && conversation.contact && conversation.contact.id">
+            <!-- Avatar -->
+            <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm flex-shrink-0">
+              {{ getInitials(conversation.contact.display_name || conversation.contact.username) }}
             </div>
-            <p
-              class="text-xs truncate mt-1"
-              :class="isActive(conversation.contact) ? 'text-yarn-black/60' : 'text-yarn-black/40'"
-            >
-              @{{ conversation.contact.username }}
-            </p>
-          </div>
+
+            <!-- Content -->
+            <div class="ml-4 flex-1 min-w-0">
+              <div class="flex justify-between items-baseline">
+                <h3 class="text-sm font-bold text-yarn-black truncate">
+                  {{ conversation.contact.display_name || conversation.contact.username }}
+                </h3>
+                <span class="text-[10px] font-medium text-yarn-black/40 uppercase tracking-tighter">
+                  {{ formatTime(conversation.last_message?.created_at || conversation.updated_at) }}
+                </span>
+              </div>
+              <p
+                class="text-xs truncate mt-1"
+                :class="isActive(conversation.contact) ? 'text-yarn-black/60' : 'text-yarn-black/40'"
+              >
+                @{{ conversation.contact.username }}
+              </p>
+            </div>
+          </template>
         </div>
       </div>
     </div>
@@ -240,8 +244,9 @@ const onSelectUser = async (user: Contact) => {
   }
 }
 
-const isActive = (user: Contact): boolean => {
-  return !!activeContact.value && activeContact.value.id === user.id
+const isActive = (user: Contact | null | undefined): boolean => {
+  if (!user || !activeContact.value) return false
+  return activeContact.value.id === user.id
 }
 
 const getInitials = (name: string): string => {

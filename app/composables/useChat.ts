@@ -109,9 +109,10 @@ export const useChat = () => {
       }
 
       const list = Array.isArray(response) ? response : response?.users ?? []
-      console.log('[Search Results]', list.map(u => ({ id: u.id, username: u.username, has_public_key: !!u.public_key })))
-      searchResults.value = list
-      return { success: true, data: list }
+      const validResults = list.filter(u => u && u.id && u.username)
+      console.log('[Search Results]', validResults.map(u => ({ id: u.id, username: u.username, has_public_key: !!u.public_key })))
+      searchResults.value = validResults
+      return { success: true, data: validResults }
     } catch (err) {
       const message = extractError(err)
       if (seq === searchSeq) {
