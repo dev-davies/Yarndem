@@ -71,7 +71,7 @@
               ? 'bg-yarn-surface border-l-4 border-yarn-terracotta shadow-sm shadow-yarn-black/5'
               : 'hover:bg-yarn-surface/50 border-l-4 border-transparent'
           ]"
-          @click="onSelectUser(user)"
+          @click="() => { console.log('[ChatSidebar] Search result clicked:', user); onSelectUser(user); }"
         >
           <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm flex-shrink-0">
             {{ getInitials(user.display_name || user.username) }}
@@ -113,7 +113,7 @@
               ? 'bg-yarn-surface border-l-4 border-yarn-terracotta shadow-sm shadow-yarn-black/5'
               : 'hover:bg-yarn-surface/50 border-l-4 border-transparent'
           ]"
-          @click="onSelectUser(conversation.contact)"
+          @click="() => { console.log('[ChatSidebar] Conversation clicked:', conversation.contact); onSelectUser(conversation.contact); }"
         >
           <!-- Avatar -->
           <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm flex-shrink-0">
@@ -222,6 +222,18 @@ const resetSearch = () => {
 }
 
 const onSelectUser = async (user: Contact) => {
+  console.log('[ChatSidebar] onSelectUser called with:', user)
+  
+  if (!user) {
+    console.error('[ChatSidebar] onSelectUser received undefined/null user')
+    return
+  }
+  
+  if (!user.id) {
+    console.error('[ChatSidebar] onSelectUser received user without id:', user)
+    return
+  }
+  
   await setActiveContact(user)
   if (hasQuery.value) {
     resetSearch()

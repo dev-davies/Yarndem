@@ -205,7 +205,11 @@ const contactInitials = computed(() => {
     .toUpperCase()
 })
 
-const canSend = computed(() => !!activePublicKey.value && !isLoadingPublicKey.value)
+const canSend = computed(() => {
+  const result = !!activePublicKey.value && !isLoadingPublicKey.value
+  console.log('[MessageWindow] canSend computed:', { activePublicKey: !!activePublicKey.value, isLoadingPublicKey: isLoadingPublicKey.value, result })
+  return result
+})
 
 const inputPlaceholder = computed(() => {
   if (isLoadingPublicKey.value) return 'Fetching recipient key…'

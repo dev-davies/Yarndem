@@ -109,6 +109,7 @@ export const useChat = () => {
       }
 
       const list = Array.isArray(response) ? response : response?.users ?? []
+      console.log('[Search Results]', list.map(u => ({ id: u.id, username: u.username, has_public_key: !!u.public_key })))
       searchResults.value = list
       return { success: true, data: list }
     } catch (err) {
@@ -154,13 +155,25 @@ export const useChat = () => {
   }
 
   const setActiveContact = async (user: Contact | null): Promise<void> => {
-    activeContact.value = user
-    activePublicKey.value = null
-
+    console.log('[setActiveContact] Called with user:', user)
+    
     if (!user) {
+      console.log('[setActiveContact] User is null/undefined, clearing active contact')
+      activeContact.value = null
+      activePublicKey.value = null
       isLoadingPublicKey.value = false
       return
     }
+
+    if (!user.id) {
+      console.error('[setActiveContact] User object missing id property:', user)
+      return
+    }
+
+    console.log('[setActiveContact] Processing user:', { id: user.id, username: user.username, has_public_key: !!user.public_key })
+    
+    activeContact.value = user
+    activePublicKey.value = null
 
     const existing = conversations.value.find((c) => c.contact.id === user.id)
     if (existing) {
@@ -181,11 +194,13 @@ export const useChat = () => {
     }
 
     if (user.public_key) {
+      console.log('[setActiveContact] Public key already present, setting activePublicKey')
       activePublicKey.value = user.public_key
       activeContact.value = { ...user }
       return
     }
 
+    console.log('[setActiveContact] Public key missing, fetching from API...')
     isLoadingPublicKey.value = true
     try {
       const response = await useApi<{ id: string; username: string; display_name: string; public_key?: string }>(
@@ -193,11 +208,18 @@ export const useChat = () => {
         { method: 'GET' },
       )
 
-      if (activeContact.value?.id !== user.id) return
+      console.log('[setActiveContact] API response:', { id: response.id, has_public_key: !!response.public_key })
+
+      if (activeContact.value?.id !== user.id) {
+        console.log('[setActiveContact] User changed during fetch, aborting')
+        return
+      }
 
       const fullProfile = { ...user, ...response }
       activeContact.value = fullProfile
       activePublicKey.value = response.public_key || null
+
+      console.log('[setActiveContact] Updated activePublicKey:', !!activePublicKey.value)
 
       if (response.public_key) {
         conversations.value = conversations.value.map((c) =>
@@ -207,13 +229,14 @@ export const useChat = () => {
         )
       }
     } catch (err) {
-      console.error('Failed to fetch public key for user', err)
+      console.error('[setActiveContact] Failed to fetch public key:', err)
       if (activeContact.value?.id === user.id) {
         activePublicKey.value = null
       }
     } finally {
       if (activeContact.value?.id === user.id) {
         isLoadingPublicKey.value = false
+        console.log('[setActiveContact] Finished, isLoadingPublicKey:', isLoadingPublicKey.value, 'activePublicKey:', !!activePublicKey.value)
       }
     }
   }
