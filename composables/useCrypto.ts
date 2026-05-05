@@ -1,0 +1,98 @@
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return window.btoa(binary)
+}
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = window.atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes.buffer
+}
+
+export interface GeneratedAccountKeys {
+  publicKeyBase64: string
+  wrappedPrivateKeyBase64: string
+  pbkdf2SaltBase64: string
+}
+
+export const useCrypto = () => {
+  const subtle = (): SubtleCrypto => {
+    if (typeof window === 'undefined' || !window.crypto?.subtle) {
+      throw new Error('Web Crypto API is not available in this environment.')
+    }
+    return window.crypto.subtle
+  }
+
+  const deriveWrappingKey = async (
+    password: string,
+    salt: Uint8Array,
+  ): Promise<CryptoKey> => {
+    const passwordKey = await subtle().importKey(
+      'raw',
+      new TextEncoder().encode(password),
+      { name: 'PBKDF2' },
+      false,
+      ['deriveKey'],
+    )
+
+    return subtle().deriveKey(
+      {
+        name: 'PBKDF2',
+        salt,
+        iterations: 100_000,
+        hash: 'SHA-256',
+      },
+      passwordKey,
+      { name: 'AES-KW', length: 256 },
+      false,
+      ['wrapKey', 'unwrapKey'],
+    )
+  }
+
+  const generateAccountKeys = async (
+    password: string,
+  ): Promise<GeneratedAccountKeys> => {
+    const keyPair = await subtle().generateKey(
+      {
+        name: 'RSA-OAEP',
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+        hash: 'SHA-256',
+      },
+      true,
+      ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
+    )
+
+    const salt = window.crypto.getRandomValues(new Uint8Array(16))
+
+    const wrappingKey = await deriveWrappingKey(password, salt)
+
+    const wrappedPrivateKey = await subtle().wrapKey(
+      'pkcs8',
+      keyPair.privateKey,
+      wrappingKey,
+      { name: 'AES-KW' },
+    )
+
+    const publicKeySpki = await subtle().exportKey('spki', keyPair.publicKey)
+
+    return {
+      publicKeyBase64: arrayBufferToBase64(publicKeySpki),
+      wrappedPrivateKeyBase64: arrayBufferToBase64(wrappedPrivateKey),
+      pbkdf2SaltBase64: arrayBufferToBase64(salt.buffer),
+    }
+  }
+
+  return {
+    generateAccountKeys,
+    arrayBufferToBase64,
+    base64ToArrayBuffer,
+  }
+}
