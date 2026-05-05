@@ -18,6 +18,22 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer
 }
 
+const padBuffer = (buffer: ArrayBuffer): ArrayBuffer => {
+  const paddingLength = 8 - (buffer.byteLength % 8)
+  const padded = new Uint8Array(buffer.byteLength + paddingLength)
+  padded.set(new Uint8Array(buffer))
+  for (let i = 0; i < paddingLength; i++) {
+    padded[buffer.byteLength + i] = paddingLength
+  }
+  return padded.buffer
+}
+
+const unpadBuffer = (buffer: ArrayBuffer): ArrayBuffer => {
+  const bytes = new Uint8Array(buffer)
+  const paddingLength = bytes[bytes.length - 1]
+  return bytes.buffer.slice(0, bytes.length - paddingLength)
+}
+
 export interface GeneratedAccountKeys {
   publicKeyBase64: string
   wrappedPrivateKeyBase64: string
@@ -54,7 +70,7 @@ export const useCrypto = () => {
       passwordKey,
       { name: 'AES-KW', length: 256 },
       false,
-      ['wrapKey', 'unwrapKey'],
+      ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
     )
   }
 
@@ -76,18 +92,24 @@ export const useCrypto = () => {
 
     const wrappingKey = await deriveWrappingKey(password, salt)
 
-    const wrappedPrivateKey = await window.crypto.subtle.wrapKey(
+    const exportedPrivateKey = await window.crypto.subtle.exportKey(
       'pkcs8',
       keyPair.privateKey,
+    )
+
+    const paddedKey = padBuffer(exportedPrivateKey)
+
+    const wrappedKeyBuffer = await window.crypto.subtle.encrypt(
+      { name: 'AES-KW' },
       wrappingKey,
-      'AES-KW',
+      paddedKey,
     )
 
     const publicKeySpki = await subtle().exportKey('spki', keyPair.publicKey)
 
     return {
       publicKeyBase64: arrayBufferToBase64(publicKeySpki),
-      wrappedPrivateKeyBase64: arrayBufferToBase64(wrappedPrivateKey),
+      wrappedPrivateKeyBase64: arrayBufferToBase64(wrappedKeyBuffer),
       pbkdf2SaltBase64: arrayBufferToBase64(salt.buffer),
     }
   }
@@ -96,5 +118,7 @@ export const useCrypto = () => {
     generateAccountKeys,
     arrayBufferToBase64,
     base64ToArrayBuffer,
+    padBuffer,
+    unpadBuffer,
   }
 }
