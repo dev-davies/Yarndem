@@ -166,13 +166,18 @@ export const useMessages = () => {
         const existingConvo = conversations.value.find((c) => c.contact.id === otherUserId)
         if (!existingConvo) {
           try {
-            const userProfile = await useApi<{ id: string; username: string; display_name: string; public_key?: string }>(
-              `/users/${otherUserId}`,
+            const response = await useApi<{ public_key: string }>(
+              `/users/${otherUserId}/public-key`,
               { method: 'GET' },
             )
-            setActiveContact(userProfile)
+            setActiveContact({
+              id: otherUserId,
+              username: otherUserId,
+              display_name: otherUserId,
+              public_key: response.public_key,
+            })
           } catch (err) {
-            console.warn(`Failed to fetch user profile for ${otherUserId}`, err)
+            console.warn(`[useMessages] Failed to fetch public key for unknown sender ${otherUserId}`, err)
             setActiveContact({
               id: otherUserId,
               username: otherUserId,
@@ -321,30 +326,35 @@ export const useMessages = () => {
 
     for (const id of contactIds) {
       try {
-        const response = await useApi<{ id: string; username: string; display_name: string; public_key?: string }>(
-          `/users/${id}`,
+        const response = await useApi<{ public_key: string }>(
+          `/users/${id}/public-key`,
           { method: 'GET' },
         )
         
-        const existing = conversations.value.find((c) => c.contact.id === id)
+        const existing = conversations.value.find((c) => (c.contact?.id === id || c.id === id))
         if (existing) {
           conversations.value = conversations.value.map((c) =>
-            c.contact.id === id
-              ? { ...c, contact: { ...c.contact, ...response }, updated_at: new Date().toISOString() }
+            (c.contact?.id === id || c.id === id)
+              ? { ...c, contact: { ...c.contact, public_key: response.public_key }, updated_at: new Date().toISOString() }
               : c
           )
         } else {
           conversations.value = [
             {
               id: `conv-${id}`,
-              contact: response,
+              contact: {
+                id,
+                username: id,
+                display_name: id,
+                public_key: response.public_key,
+              },
               updated_at: new Date().toISOString(),
             },
             ...conversations.value,
           ]
         }
       } catch (err) {
-        console.warn(`Failed to fetch user ${id}, using ID as fallback`, err)
+        console.warn(`[useMessages] Failed to rehydrate public key for ${id}`, err)
         const existing = conversations.value.find((c) => c.contact.id === id)
         if (!existing) {
           conversations.value = [

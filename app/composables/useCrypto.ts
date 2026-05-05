@@ -336,15 +336,7 @@ export const useCrypto = () => {
   ): Promise<string> => {
     const keyField = sentBySelf ? 'encryptedKeyForSelf' : 'encryptedKey'
     
-    console.log(`[useCrypto] Decrypting message ${messageId || 'unknown'}:`, {
-      sentBySelf,
-      useKeyField: keyField,
-      hasActivePrivateKey: !!activePrivateKey,
-      payloadKeys: {
-        hasEncKey: !!payload.encryptedKey,
-        hasEncKeySelf: !!payload.encryptedKeyForSelf
-      }
-    })
+    console.log(`[useCrypto] Decryption Attempt: Message ID ${messageId || 'unknown'}, using key: ${keyField}`)
 
     if (!activePrivateKey) {
       throw new Error('Private key not loaded. Please log in to decrypt messages.')
