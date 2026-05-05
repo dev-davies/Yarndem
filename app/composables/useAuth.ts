@@ -1,5 +1,3 @@
-const API_BASE_URL = 'https://whisperbox.koyeb.app'
-
 export interface UserProfile {
   id: string
   username: string
@@ -76,8 +74,7 @@ export const useAuth = () => {
       const { publicKeyBase64, wrappedPrivateKeyBase64, pbkdf2SaltBase64 } =
         await generateAccountKeys(password)
 
-      const response = await $fetch<AuthResponse>('/auth/register', {
-        baseURL: API_BASE_URL,
+      const response = await useApi<AuthResponse>('/auth/register', {
         method: 'POST',
         body: {
           username,
@@ -101,8 +98,7 @@ export const useAuth = () => {
     password: string,
   ): Promise<AuthResult> => {
     try {
-      const response = await $fetch<AuthResponse>('/auth/login', {
-        baseURL: API_BASE_URL,
+      const response = await useApi<AuthResponse>('/auth/login', {
         method: 'POST',
         body: { username, password },
       })

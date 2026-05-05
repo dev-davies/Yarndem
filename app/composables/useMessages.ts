@@ -1,4 +1,3 @@
-const API_BASE_URL = 'https://whisperbox.koyeb.app'
 const WS_BASE_URL = 'wss://whisperbox.koyeb.app/ws'
 
 export interface DecryptedMessage {
@@ -42,11 +41,6 @@ export const useMessages = () => {
 
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let manuallyClosed = false
-
-  const authHeaders = (): Record<string, string> => {
-    const token = accessToken.value
-    return token ? { Authorization: `Bearer ${token}` } : {}
-  }
 
   const isMine = (senderId: string): boolean => {
     return !!currentUser.value && currentUser.value.id === senderId
@@ -166,13 +160,9 @@ export const useMessages = () => {
 
     activeConversationUserId.value = userId
 
-    const response = await $fetch<EncryptedMessageEnvelope[] | { messages: EncryptedMessageEnvelope[] }>(
+    const response = await useApi<EncryptedMessageEnvelope[] | { messages: EncryptedMessageEnvelope[] }>(
       `/conversations/${userId}/messages`,
-      {
-        baseURL: API_BASE_URL,
-        method: 'GET',
-        headers: authHeaders(),
-      },
+      { method: 'GET' },
     )
 
     const list = Array.isArray(response) ? response : response?.messages ?? []
@@ -236,10 +226,8 @@ export const useMessages = () => {
     }
 
     try {
-      const saved = await $fetch<EncryptedMessageEnvelope>('/messages', {
-        baseURL: API_BASE_URL,
+      const saved = await useApi<EncryptedMessageEnvelope>('/messages', {
         method: 'POST',
-        headers: authHeaders(),
         body: wireBody,
       })
 

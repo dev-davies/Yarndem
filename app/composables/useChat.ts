@@ -1,5 +1,3 @@
-const API_BASE_URL = 'https://whisperbox.koyeb.app'
-
 export interface Contact {
   id: string
   username: string
@@ -51,11 +49,6 @@ export const useChat = () => {
     return e?.message || 'An unexpected error occurred'
   }
 
-  const authHeaders = (): Record<string, string> => {
-    const token = accessToken.value
-    return token ? { Authorization: `Bearer ${token}` } : {}
-  }
-
   const loadConversations = async (): Promise<ChatResult<Conversation[]>> => {
     if (!accessToken.value) {
       return { success: false, error: 'Not authenticated' }
@@ -63,13 +56,9 @@ export const useChat = () => {
 
     isLoadingConversations.value = true
     try {
-      const response = await $fetch<Conversation[] | { conversations: Conversation[] }>(
+      const response = await useApi<Conversation[] | { conversations: Conversation[] }>(
         '/conversations',
-        {
-          baseURL: API_BASE_URL,
-          method: 'GET',
-          headers: authHeaders(),
-        },
+        { method: 'GET' },
       )
 
       const list = Array.isArray(response) ? response : response?.conversations ?? []
@@ -99,13 +88,11 @@ export const useChat = () => {
     const seq = ++searchSeq
     isSearching.value = true
     try {
-      const response = await $fetch<Contact[] | { users: Contact[] }>(
+      const response = await useApi<Contact[] | { users: Contact[] }>(
         '/users/search',
         {
-          baseURL: API_BASE_URL,
           method: 'GET',
           query: { q: trimmed },
-          headers: authHeaders(),
         },
       )
 
