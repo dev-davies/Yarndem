@@ -37,6 +37,8 @@ export const useChat = () => {
   const isLoadingConversations = useState<boolean>('chat:loadingConversations', () => false)
   const isSearching = useState<boolean>('chat:isSearching', () => false)
   const isLoadingPublicKey = useState<boolean>('chat:loadingPublicKey', () => false)
+  const searchError = useState<string>('chat:searchError', () => '')
+  const conversationsError = useState<string>('chat:conversationsError', () => '')
 
   const extractError = (err: unknown): string => {
     const e = err as { data?: { message?: string; detail?: string; error?: string }; statusCode?: number; status?: number; message?: string }
@@ -57,6 +59,7 @@ export const useChat = () => {
     }
 
     isLoadingConversations.value = true
+    conversationsError.value = ''
     try {
       const response = await useApi<Conversation[] | { conversations: Conversation[] }>(
         '/conversations',
@@ -67,7 +70,9 @@ export const useChat = () => {
       conversations.value = list
       return { success: true, data: list }
     } catch (err) {
-      return { success: false, error: extractError(err) }
+      const message = extractError(err)
+      conversationsError.value = message
+      return { success: false, error: message }
     } finally {
       isLoadingConversations.value = false
     }
@@ -89,6 +94,7 @@ export const useChat = () => {
 
     const seq = ++searchSeq
     isSearching.value = true
+    searchError.value = ''
     try {
       const response = await useApi<Contact[] | { users: Contact[] }>(
         '/users/search',
@@ -106,10 +112,12 @@ export const useChat = () => {
       searchResults.value = list
       return { success: true, data: list }
     } catch (err) {
+      const message = extractError(err)
       if (seq === searchSeq) {
         searchResults.value = []
+        searchError.value = message
       }
-      return { success: false, error: extractError(err) }
+      return { success: false, error: message }
     } finally {
       if (seq === searchSeq) {
         isSearching.value = false
@@ -141,6 +149,7 @@ export const useChat = () => {
     }
     searchSeq++
     searchResults.value = []
+    searchError.value = ''
     isSearching.value = false
   }
 
@@ -175,8 +184,7 @@ export const useChat = () => {
       if (key) {
         activeContact.value = { ...user, public_key: key }
       }
-    } catch (err) {
-      console.error('Failed to fetch recipient public key', err)
+    } catch {
       if (activeContact.value?.id === user.id) {
         activePublicKey.value = null
       }
@@ -195,6 +203,8 @@ export const useChat = () => {
     isLoadingConversations,
     isLoadingPublicKey,
     isSearching,
+    searchError,
+    conversationsError,
     loadConversations,
     searchUsers,
     clearSearch,

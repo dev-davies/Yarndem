@@ -69,8 +69,7 @@ export const useMessages = () => {
     let text: string
     try {
       text = await decryptMessage(toEncryptedPayload(envelope), sentBySelf)
-    } catch (err) {
-      console.error('Failed to decrypt message', envelope.id, err)
+    } catch {
       text = '[Unable to decrypt message]'
     }
 

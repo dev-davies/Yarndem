@@ -45,7 +45,15 @@
         <span v-if="isSearching" class="text-[10px] text-yarn-black/40">Searching…</span>
       </div>
 
-      <div v-if="!isSearching && searchResults.length === 0" class="px-4 py-6 text-center text-xs text-yarn-black/40">
+      <div
+        v-if="searchError"
+        class="mx-3 mb-3 rounded-xl border border-red-300/60 bg-red-50/80 px-3 py-2 text-xs text-red-700"
+        role="alert"
+      >
+        {{ searchError }}
+      </div>
+
+      <div v-if="!isSearching && !searchError && searchResults.length === 0" class="px-4 py-6 text-center text-xs text-yarn-black/40">
         No users found for "{{ searchQuery }}".
       </div>
 
@@ -76,6 +84,14 @@
     <div v-else class="flex-1 overflow-y-auto custom-scrollbar px-3">
       <div v-if="isLoadingConversations" class="px-4 py-6 text-center text-xs text-yarn-black/40">
         Loading conversations…
+      </div>
+
+      <div
+        v-else-if="conversationsError"
+        class="mx-3 my-3 rounded-xl border border-red-300/60 bg-red-50/80 px-3 py-3 text-xs text-red-700"
+        role="alert"
+      >
+        {{ conversationsError }}
       </div>
 
       <div v-else-if="conversations.length === 0" class="px-4 py-10 text-center">
@@ -158,6 +174,8 @@ const {
   activeContact,
   isSearching,
   isLoadingConversations,
+  searchError,
+  conversationsError,
   searchUsers,
   clearSearch,
   loadConversations,
