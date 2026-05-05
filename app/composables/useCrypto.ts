@@ -18,21 +18,7 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer
 }
 
-const padBuffer = (buffer: ArrayBuffer): ArrayBuffer => {
-  const paddingLength = 8 - (buffer.byteLength % 8)
-  const padded = new Uint8Array(buffer.byteLength + paddingLength)
-  padded.set(new Uint8Array(buffer))
-  for (let i = 0; i < paddingLength; i++) {
-    padded[buffer.byteLength + i] = paddingLength
-  }
-  return padded.buffer
-}
-
-const unpadBuffer = (buffer: ArrayBuffer): ArrayBuffer => {
-  const bytes = new Uint8Array(buffer)
-  const paddingLength = bytes[bytes.length - 1]
-  return bytes.buffer.slice(0, bytes.length - paddingLength)
-}
+const IV_LENGTH = 12
 
 export interface GeneratedAccountKeys {
   publicKeyBase64: string
@@ -68,9 +54,9 @@ export const useCrypto = () => {
         hash: 'SHA-256',
       },
       passwordKey,
-      { name: 'AES-KW', length: 256 },
+      { name: 'AES-GCM', length: 256 },
       false,
-      ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'],
+      ['wrapKey', 'unwrapKey'],
     )
   }
 
@@ -89,36 +75,63 @@ export const useCrypto = () => {
     )) as CryptoKeyPair
 
     const salt = window.crypto.getRandomValues(new Uint8Array(16))
+    const iv = window.crypto.getRandomValues(new Uint8Array(IV_LENGTH))
 
     const wrappingKey = await deriveWrappingKey(password, salt)
 
-    const exportedPrivateKey = await window.crypto.subtle.exportKey(
+    const wrappedPrivateKey = await subtle().wrapKey(
       'pkcs8',
       keyPair.privateKey,
-    )
-
-    const paddedKey = padBuffer(exportedPrivateKey)
-
-    const wrappedKeyBuffer = await window.crypto.subtle.encrypt(
-      { name: 'AES-KW' },
       wrappingKey,
-      paddedKey,
+      { name: 'AES-GCM', iv },
     )
+
+    const wrappedBytes = new Uint8Array(wrappedPrivateKey)
+    const combined = new Uint8Array(iv.byteLength + wrappedBytes.byteLength)
+    combined.set(iv, 0)
+    combined.set(wrappedBytes, iv.byteLength)
 
     const publicKeySpki = await subtle().exportKey('spki', keyPair.publicKey)
 
     return {
       publicKeyBase64: arrayBufferToBase64(publicKeySpki),
-      wrappedPrivateKeyBase64: arrayBufferToBase64(wrappedKeyBuffer),
+      wrappedPrivateKeyBase64: arrayBufferToBase64(combined.buffer),
       pbkdf2SaltBase64: arrayBufferToBase64(salt.buffer),
     }
   }
 
+  const unwrapAccountPrivateKey = async (
+    password: string,
+    wrappedPrivateKeyBase64: string,
+    pbkdf2SaltBase64: string,
+  ): Promise<CryptoKey> => {
+    const salt = new Uint8Array(base64ToArrayBuffer(pbkdf2SaltBase64))
+    const combined = new Uint8Array(base64ToArrayBuffer(wrappedPrivateKeyBase64))
+
+    if (combined.byteLength <= IV_LENGTH) {
+      throw new Error('Wrapped private key payload is malformed.')
+    }
+
+    const iv = combined.slice(0, IV_LENGTH)
+    const ciphertext = combined.slice(IV_LENGTH)
+
+    const wrappingKey = await deriveWrappingKey(password, salt)
+
+    return subtle().unwrapKey(
+      'pkcs8',
+      ciphertext,
+      wrappingKey,
+      { name: 'AES-GCM', iv },
+      { name: 'RSA-OAEP', hash: 'SHA-256' },
+      true,
+      ['decrypt', 'unwrapKey'],
+    )
+  }
+
   return {
     generateAccountKeys,
+    unwrapAccountPrivateKey,
     arrayBufferToBase64,
     base64ToArrayBuffer,
-    padBuffer,
-    unpadBuffer,
   }
 }
