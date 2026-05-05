@@ -33,57 +33,41 @@
     </header>
 
     <!-- Message Area -->
-    <div class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[radial-gradient(#C05A3E05_1px,transparent_1px)] [background-size:20px_20px]">
-      <div v-for="message in messages" :key="message.id" class="flex" :class="message.sent ? 'justify-end' : 'justify-start'">
-        <div 
-          class="max-w-[75%] shadow-sm"
+    <div ref="scrollEl" class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[radial-gradient(#C05A3E05_1px,transparent_1px)] [background-size:20px_20px]">
+      <div v-if="isLoadingHistory" class="flex justify-center py-8">
+        <span class="text-xs text-yarn-black/40 uppercase tracking-widest">Decrypting messages…</span>
+      </div>
+
+      <div v-else-if="messages.length === 0" class="flex justify-center py-12">
+        <p class="text-xs text-yarn-black/40 max-w-xs text-center">
+          No messages yet. Say something — it'll be end-to-end encrypted before it leaves your device.
+        </p>
+      </div>
+
+      <div
+        v-for="message in messages"
+        :key="message.id"
+        class="flex"
+        :class="message.sentBySelf ? 'justify-end' : 'justify-start'"
+      >
+        <div
+          class="max-w-[75%] shadow-sm px-5 py-4"
           :class="[
-            message.sent 
-              ? 'bg-yarn-black text-white rounded-2xl rounded-br-none' 
+            message.sentBySelf
+              ? 'bg-yarn-black text-white rounded-2xl rounded-br-none'
               : 'bg-yarn-surface text-yarn-black border border-yarn-border rounded-2xl rounded-bl-none',
-            message.type === 'image' ? 'p-1' : 'px-5 py-4'
+            message.status === 'failed' ? 'opacity-60 ring-1 ring-red-400/40' : ''
           ]"
         >
-          <!-- Text Content -->
-          <p v-if="message.text" class="text-sm leading-relaxed" :class="{ 'px-4 py-3': message.type === 'image' }">
-            {{ message.text }}
-          </p>
+          <p class="text-sm leading-relaxed whitespace-pre-wrap break-words">{{ message.text }}</p>
 
-          <!-- Image Content -->
-          <div v-if="message.type === 'image'" class="relative">
-            <img 
-              :src="message.mediaUrl" 
-              alt="Sent image" 
-              class="rounded-xl w-full h-auto object-cover max-h-64"
-            />
-          </div>
-
-          <!-- File Content -->
-          <div v-if="message.type === 'file'" class="flex items-center space-x-4 p-2 rounded-xl" :class="message.sent ? 'bg-white/10' : 'bg-yarn-bg'">
-            <div class="p-3 bg-yarn-terracotta rounded-xl">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-            <div class="min-w-0">
-              <p class="text-sm font-bold truncate">{{ message.fileName }}</p>
-              <p class="text-[10px] uppercase tracking-widest opacity-60">{{ message.fileSize }}</p>
-            </div>
-            <button class="p-2 hover:opacity-70 transition-opacity">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            </button>
-          </div>
-
-          <div 
-            class="mt-2 text-[9px] uppercase tracking-tighter opacity-50"
-            :class="[
-              message.sent ? 'text-right' : 'text-left',
-              message.type === 'image' ? 'px-4 pb-3' : ''
-            ]"
+          <div
+            class="mt-2 text-[9px] uppercase tracking-tighter opacity-50 flex items-center gap-2"
+            :class="message.sentBySelf ? 'justify-end' : 'justify-start'"
           >
-            {{ message.time }}
+            <span>{{ formatTime(message.createdAt) }}</span>
+            <span v-if="message.sentBySelf && message.status === 'sent'">• Sent</span>
+            <span v-if="message.sentBySelf && message.status === 'failed'" class="text-red-300">• Failed</span>
           </div>
         </div>
       </div>
@@ -91,9 +75,13 @@
 
     <!-- Input Area -->
     <footer class="p-6 border-t border-yarn-border bg-yarn-surface">
-      <form @submit.prevent="sendMessage" class="flex items-center space-x-4 max-w-5xl mx-auto">
+      <div v-if="sendError" class="max-w-5xl mx-auto mb-3 text-xs text-red-600 bg-red-50/80 border border-red-300/60 rounded-xl px-4 py-2">
+        {{ sendError }}
+      </div>
+
+      <form class="flex items-center space-x-4 max-w-5xl mx-auto" @submit.prevent="onSend">
         <!-- Attachment Button -->
-        <button 
+        <button
           type="button"
           class="p-4 text-yarn-black/40 hover:text-yarn-black transition-colors duration-300"
           title="Attach file"
@@ -104,17 +92,19 @@
         </button>
 
         <div class="flex-1 relative">
-          <input 
-            type="text" 
+          <input
             v-model="newMessage"
-            placeholder="Type a secure message..." 
-            class="w-full bg-yarn-bg border border-yarn-border rounded-full px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-yarn-black/5 focus:border-yarn-black transition-all"
+            type="text"
+            :placeholder="canSend ? 'Type a secure message...' : 'Recipient public key missing — cannot send'"
+            :disabled="!canSend || isSending"
+            class="w-full bg-yarn-bg border border-yarn-border rounded-full px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-yarn-black/5 focus:border-yarn-black transition-all disabled:opacity-60"
           />
         </div>
 
-        <button 
+        <button
           type="submit"
-          class="p-4 rounded-full text-yarn-black hover:text-yarn-terracotta transition-colors duration-300 transform active:scale-90"
+          :disabled="!canSend || isSending || !newMessage.trim()"
+          class="p-4 rounded-full text-yarn-black hover:text-yarn-terracotta transition-colors duration-300 transform active:scale-90 disabled:opacity-40 disabled:hover:text-yarn-black"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
@@ -126,20 +116,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-
-interface Message {
-  id: number
-  text?: string
-  time: string
-  sent: boolean
-  type: 'text' | 'image' | 'file'
-  mediaUrl?: string
-  fileName?: string
-  fileSize?: string
-}
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 
 const { activeContact } = useChat()
+const { messages, loadHistory, clearMessages, sendMessage, connectWS, disconnectWS } = useMessages()
+
+const newMessage = ref('')
+const isSending = ref(false)
+const isLoadingHistory = ref(false)
+const sendError = ref('')
+const scrollEl = ref<HTMLDivElement | null>(null)
 
 const contactDisplayName = computed(() => {
   if (!activeContact.value) return ''
@@ -158,60 +144,86 @@ const contactInitials = computed(() => {
     .toUpperCase()
 })
 
-const newMessage = ref('')
-const messages = ref<Message[]>([
-  {
-    id: 1,
-    type: 'text',
-    text: "Peace be unto you, Amara. Have you verified the new session keys?",
-    time: "10:40 AM",
-    sent: true
-  },
-  {
-    id: 2,
-    type: 'text',
-    text: "Verified and locked. The vault sync is complete.",
-    time: "10:42 AM",
-    sent: false
-  },
-  {
-    id: 3,
-    type: 'image',
-    text: "Here is the architectural pattern I was talking about.",
-    mediaUrl: "https://picsum.photos/600/400",
-    time: "10:43 AM",
-    sent: true
-  },
-  {
-    id: 4,
-    type: 'file',
-    fileName: "Project_Brief.pdf",
-    fileSize: "2.4 MB",
-    time: "10:45 AM",
-    sent: false
-  },
-  {
-    id: 5,
-    type: 'text',
-    text: "Excellent. The minimalist interface really helps focus. Let's keep it secure.",
-    time: "10:46 AM",
-    sent: true
-  }
-])
+const canSend = computed(() => !!activeContact.value?.public_key)
 
-const sendMessage = () => {
-  if (!newMessage.value.trim()) return
-  
-  messages.value.push({
-    id: Date.now(),
-    type: 'text',
-    text: newMessage.value,
-    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    sent: true
-  })
-  
-  newMessage.value = ''
+const formatTime = (iso: string): string => {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
+
+const scrollToBottom = async () => {
+  await nextTick()
+  if (scrollEl.value) {
+    scrollEl.value.scrollTop = scrollEl.value.scrollHeight
+  }
+}
+
+watch(
+  activeContact,
+  async (contact) => {
+    sendError.value = ''
+    if (!contact) {
+      clearMessages()
+      return
+    }
+    isLoadingHistory.value = true
+    try {
+      await loadHistory(contact.id)
+      await scrollToBottom()
+    } catch (err) {
+      const msg = (err as { data?: { message?: string }; message?: string })?.data?.message
+        || (err as { message?: string })?.message
+        || 'Failed to load message history.'
+      sendError.value = msg
+    } finally {
+      isLoadingHistory.value = false
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => messages.value.length,
+  () => {
+    scrollToBottom()
+  },
+)
+
+const onSend = async () => {
+  if (!activeContact.value || !canSend.value) return
+  const text = newMessage.value.trim()
+  if (!text) return
+
+  isSending.value = true
+  sendError.value = ''
+  const draft = newMessage.value
+  newMessage.value = ''
+
+  try {
+    await sendMessage(
+      activeContact.value.id,
+      text,
+      activeContact.value.public_key as string,
+    )
+  } catch (err) {
+    newMessage.value = draft
+    const msg = (err as { data?: { message?: string }; message?: string })?.data?.message
+      || (err as { message?: string })?.message
+      || 'Failed to send message.'
+    sendError.value = msg
+  } finally {
+    isSending.value = false
+  }
+}
+
+onMounted(() => {
+  connectWS()
+})
+
+onBeforeUnmount(() => {
+  disconnectWS()
+})
 </script>
 
 <style scoped>
