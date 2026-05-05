@@ -128,3 +128,24 @@ export const useStorage = () => {
     clearLocalArchive,
   }
 }
+
+const deleteDatabase = (name: string): Promise<void> => {
+  return new Promise((resolve) => {
+    if (typeof indexedDB === 'undefined') {
+      resolve()
+      return
+    }
+    const req = indexedDB.deleteDatabase(name)
+    req.onsuccess = () => resolve()
+    req.onerror = () => resolve()
+    req.onblocked = () => resolve()
+  })
+}
+
+export const destroyLocalVault = async (): Promise<void> => {
+  if (typeof indexedDB === 'undefined') return
+  await Promise.all([
+    deleteDatabase(ARCHIVE_DB_NAME),
+    deleteDatabase('yarn-vault'),
+  ])
+}

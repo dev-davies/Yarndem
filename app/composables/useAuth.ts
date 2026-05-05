@@ -170,7 +170,32 @@ export const useAuth = () => {
   }
 
   const logout = async () => {
-    await clearAuth()
+    try {
+      await useApi('/auth/logout', { method: 'POST' })
+    } catch (err) {
+      console.warn('Server logout failed; continuing with local purge.', err)
+    }
+
+    try {
+      const { destroyLocalVault } = await import('./useStorage')
+      await destroyLocalVault()
+    } catch (err) {
+      console.error('Failed to destroy local vault', err)
+    }
+
+    try {
+      const { clearActiveKeys } = useCrypto()
+      clearActiveKeys()
+    } catch {
+      /* noop */
+    }
+
+    accessToken.value = null
+    refreshToken.value = null
+    currentUser.value = null
+    needsPasswordToUnlock.value = false
+
+    await navigateTo('/login')
   }
 
   const fetchMe = async (): Promise<UserProfile | null> => {

@@ -73,7 +73,7 @@
     </div>
 
     <!-- Conversation List -->
-    <div v-else class="flex-1 overflow-y-auto custom-scrollbar px-3 pb-6">
+    <div v-else class="flex-1 overflow-y-auto custom-scrollbar px-3">
       <div v-if="isLoadingConversations" class="px-4 py-6 text-center text-xs text-yarn-black/40">
         Loading conversations…
       </div>
@@ -120,6 +120,32 @@
         </div>
       </div>
     </div>
+
+    <!-- Footer / Vault Controls -->
+    <div class="border-t border-yarn-border bg-yarn-surface/60 px-4 py-4 flex items-center justify-between">
+      <div class="min-w-0">
+        <p class="text-xs font-bold text-yarn-black truncate">
+          {{ currentUser?.display_name || currentUser?.username || 'Signed out' }}
+        </p>
+        <p class="text-[10px] uppercase tracking-widest text-yarn-black/40 truncate">
+          @{{ currentUser?.username || '—' }}
+        </p>
+      </div>
+      <button
+        type="button"
+        :disabled="isLoggingOut"
+        class="ml-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-yarn-border bg-yarn-bg hover:border-yarn-terracotta hover:text-yarn-terracotta text-yarn-black/70 transition-colors duration-200 disabled:opacity-50"
+        title="Sign out and wipe local vault"
+        @click="onLogout"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+        <span class="text-[11px] font-bold uppercase tracking-widest">
+          {{ isLoggingOut ? 'Wiping…' : 'Lock Vault' }}
+        </span>
+      </button>
+    </div>
   </div>
 </template>
 
@@ -137,6 +163,19 @@ const {
   loadConversations,
   setActiveContact,
 } = useChat()
+
+const { currentUser, logout } = useAuth()
+const isLoggingOut = ref(false)
+
+const onLogout = async () => {
+  if (isLoggingOut.value) return
+  isLoggingOut.value = true
+  try {
+    await logout()
+  } finally {
+    isLoggingOut.value = false
+  }
+}
 
 const searchQuery = ref('')
 const hasQuery = computed(() => searchQuery.value.trim().length > 0)
