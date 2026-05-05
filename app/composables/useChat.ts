@@ -32,9 +32,11 @@ export const useChat = () => {
   const conversations = useState<Conversation[]>('chat:conversations', () => [])
   const searchResults = useState<Contact[]>('chat:searchResults', () => [])
   const activeContact = useState<Contact | null>('chat:activeContact', () => null)
+  const activePublicKey = useState<string | null>('chat:activePublicKey', () => null)
 
   const isLoadingConversations = useState<boolean>('chat:loadingConversations', () => false)
   const isSearching = useState<boolean>('chat:isSearching', () => false)
+  const isLoadingPublicKey = useState<boolean>('chat:loadingPublicKey', () => false)
 
   const extractError = (err: unknown): string => {
     const e = err as { data?: { message?: string; detail?: string; error?: string }; statusCode?: number; status?: number; message?: string }
@@ -142,15 +144,56 @@ export const useChat = () => {
     isSearching.value = false
   }
 
-  const setActiveContact = (user: Contact | null) => {
+  const setActiveContact = async (user: Contact | null): Promise<void> => {
     activeContact.value = user
+    activePublicKey.value = null
+
+    if (!user) {
+      isLoadingPublicKey.value = false
+      return
+    }
+
+    if (user.public_key) {
+      activePublicKey.value = user.public_key
+      return
+    }
+
+    isLoadingPublicKey.value = true
+    try {
+      const response = await useApi<{ public_key: string } | { user: { public_key: string } }>(
+        `/users/${user.id}/public-key`,
+        { method: 'GET' },
+      )
+
+      const key = (response as { public_key?: string })?.public_key
+        ?? (response as { user?: { public_key?: string } })?.user?.public_key
+        ?? null
+
+      if (activeContact.value?.id !== user.id) return
+
+      activePublicKey.value = key
+      if (key) {
+        activeContact.value = { ...user, public_key: key }
+      }
+    } catch (err) {
+      console.error('Failed to fetch recipient public key', err)
+      if (activeContact.value?.id === user.id) {
+        activePublicKey.value = null
+      }
+    } finally {
+      if (activeContact.value?.id === user.id) {
+        isLoadingPublicKey.value = false
+      }
+    }
   }
 
   return {
     conversations,
     searchResults,
     activeContact,
+    activePublicKey,
     isLoadingConversations,
+    isLoadingPublicKey,
     isSearching,
     loadConversations,
     searchUsers,

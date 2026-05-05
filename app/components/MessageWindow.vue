@@ -95,8 +95,8 @@
           <input
             v-model="newMessage"
             type="text"
-            :placeholder="canSend ? 'Type a secure message...' : 'Recipient public key missing — cannot send'"
-            :disabled="!canSend || isSending"
+            :placeholder="inputPlaceholder"
+            :disabled="!canSend || isSending || isLoadingPublicKey"
             class="w-full bg-yarn-bg border border-yarn-border rounded-full px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-yarn-black/5 focus:border-yarn-black transition-all disabled:opacity-60"
           />
         </div>
@@ -118,7 +118,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 
-const { activeContact } = useChat()
+const { activeContact, activePublicKey, isLoadingPublicKey } = useChat()
 const { messages, loadHistory, clearMessages, sendMessage, connectWS, disconnectWS } = useMessages()
 
 const newMessage = ref('')
@@ -144,7 +144,13 @@ const contactInitials = computed(() => {
     .toUpperCase()
 })
 
-const canSend = computed(() => !!activeContact.value?.public_key)
+const canSend = computed(() => !!activePublicKey.value)
+
+const inputPlaceholder = computed(() => {
+  if (isLoadingPublicKey.value) return 'Fetching recipient key…'
+  if (!canSend.value) return 'Recipient public key missing — cannot send'
+  return 'Type a secure message...'
+})
 
 const formatTime = (iso: string): string => {
   const d = new Date(iso)
@@ -204,7 +210,7 @@ const onSend = async () => {
     await sendMessage(
       activeContact.value.id,
       text,
-      activeContact.value.public_key as string,
+      activePublicKey.value as string,
     )
   } catch (err) {
     newMessage.value = draft
