@@ -31,7 +31,7 @@ interface WSFrame<T = unknown> {
 
 export const useMessages = () => {
   const accessToken = useCookie<string | null>('access_token')
-  const { encryptMessage, decryptMessage } = useCrypto()
+  const { encryptMessage, decryptMessage, getActivePublicKey, setActivePublicKey } = useCrypto()
   const { currentUser } = useAuth()
 
   const messages = useState<DecryptedMessage[]>('messages:list', () => [])
@@ -192,6 +192,14 @@ export const useMessages = () => {
     }
     if (!accessToken.value) {
       throw new Error('Not authenticated')
+    }
+
+    if (!getActivePublicKey() && currentUser.value?.public_key) {
+      try {
+        await setActivePublicKey(currentUser.value.public_key)
+      } catch (err) {
+        console.warn('Failed to import own public key from profile', err)
+      }
     }
 
     const payload = await encryptMessage(trimmed, recipientPublicKey)

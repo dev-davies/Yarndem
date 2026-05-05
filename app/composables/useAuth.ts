@@ -3,6 +3,8 @@ export interface UserProfile {
   username: string
   display_name: string
   public_key?: string
+  wrapped_private_key?: string
+  pbkdf2_salt?: string
   created_at?: string
 }
 
@@ -34,6 +36,7 @@ export const useAuth = () => {
   })
 
   const currentUser = useState<UserProfile | null>('auth:currentUser', () => null)
+  const needsPasswordToUnlock = useState<boolean>('auth:needsPasswordToUnlock', () => false)
   const isAuthenticated = computed(() => !!accessToken.value && !!currentUser.value)
 
   const extractError = (err: unknown): string => {
@@ -58,10 +61,17 @@ export const useAuth = () => {
     currentUser.value = response.user
   }
 
-  const clearAuth = () => {
+  const clearAuth = async () => {
     accessToken.value = null
     refreshToken.value = null
     currentUser.value = null
+    needsPasswordToUnlock.value = false
+    try {
+      const { clearSessionKey } = useCrypto()
+      await clearSessionKey()
+    } catch {
+      /* noop */
+    }
   }
 
   const register = async (
@@ -70,7 +80,7 @@ export const useAuth = () => {
     password: string,
   ): Promise<AuthResult> => {
     try {
-      const { generateAccountKeys } = useCrypto()
+      const { generateAccountKeys, getActivePrivateKey, getActivePublicKey, storeSessionKey } = useCrypto()
       const { publicKeyBase64, wrappedPrivateKeyBase64, pbkdf2SaltBase64 } =
         await generateAccountKeys(password)
 
@@ -87,6 +97,13 @@ export const useAuth = () => {
       })
 
       persistAuth(response)
+
+      const privateKey = getActivePrivateKey()
+      if (privateKey) {
+        await storeSessionKey(privateKey, getActivePublicKey() ?? undefined)
+        needsPasswordToUnlock.value = false
+      }
+
       return { success: true, user: response.user }
     } catch (err) {
       return { success: false, error: extractError(err) }
@@ -104,14 +121,97 @@ export const useAuth = () => {
       })
 
       persistAuth(response)
+
+      const { wrapped_private_key, pbkdf2_salt, public_key } = response.user
+      if (wrapped_private_key && pbkdf2_salt) {
+        try {
+          const { unwrapAccountPrivateKey, getActivePrivateKey, getActivePublicKey, storeSessionKey } = useCrypto()
+          await unwrapAccountPrivateKey(password, wrapped_private_key, pbkdf2_salt, public_key)
+          const privateKey = getActivePrivateKey()
+          if (privateKey) {
+            await storeSessionKey(privateKey, getActivePublicKey() ?? undefined)
+            needsPasswordToUnlock.value = false
+          }
+        } catch (err) {
+          console.error('Failed to unwrap private key after login', err)
+          needsPasswordToUnlock.value = true
+        }
+      } else {
+        needsPasswordToUnlock.value = true
+      }
+
       return { success: true, user: response.user }
     } catch (err) {
       return { success: false, error: extractError(err) }
     }
   }
 
-  const logout = () => {
-    clearAuth()
+  const unlockWithPassword = async (password: string): Promise<AuthResult> => {
+    if (!currentUser.value?.wrapped_private_key || !currentUser.value?.pbkdf2_salt) {
+      return { success: false, error: 'Cannot unlock: missing wrapped key on profile.' }
+    }
+    try {
+      const { unwrapAccountPrivateKey, getActivePrivateKey, getActivePublicKey, storeSessionKey } = useCrypto()
+      await unwrapAccountPrivateKey(
+        password,
+        currentUser.value.wrapped_private_key,
+        currentUser.value.pbkdf2_salt,
+        currentUser.value.public_key,
+      )
+      const privateKey = getActivePrivateKey()
+      if (privateKey) {
+        await storeSessionKey(privateKey, getActivePublicKey() ?? undefined)
+      }
+      needsPasswordToUnlock.value = false
+      return { success: true, user: currentUser.value }
+    } catch (err) {
+      return { success: false, error: extractError(err) || 'Incorrect password.' }
+    }
+  }
+
+  const logout = async () => {
+    await clearAuth()
+  }
+
+  const fetchMe = async (): Promise<UserProfile | null> => {
+    if (!accessToken.value) {
+      currentUser.value = null
+      needsPasswordToUnlock.value = false
+      return null
+    }
+
+    try {
+      const response = await useApi<UserProfile | { user: UserProfile }>('/auth/me', {
+        method: 'GET',
+      })
+
+      const profile =
+        (response as { user?: UserProfile })?.user
+        ?? (response as UserProfile)
+
+      currentUser.value = profile
+
+      try {
+        const { retrieveSessionKey, setActivePublicKey, getActivePublicKey } = useCrypto()
+        const privateKey = await retrieveSessionKey()
+        if (privateKey) {
+          if (!getActivePublicKey() && profile.public_key) {
+            await setActivePublicKey(profile.public_key)
+          }
+          needsPasswordToUnlock.value = false
+        } else {
+          needsPasswordToUnlock.value = true
+        }
+      } catch (err) {
+        console.error('Failed to load session key from vault', err)
+        needsPasswordToUnlock.value = true
+      }
+
+      return profile
+    } catch (err) {
+      console.error('Failed to rehydrate session', err)
+      return null
+    }
   }
 
   return {
@@ -119,8 +219,11 @@ export const useAuth = () => {
     refreshToken,
     currentUser,
     isAuthenticated,
+    needsPasswordToUnlock,
     register,
     login,
     logout,
+    fetchMe,
+    unlockWithPassword,
   }
 }

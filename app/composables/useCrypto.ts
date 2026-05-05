@@ -20,8 +20,72 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 
 const IV_LENGTH = 12
 
+const VAULT_DB_NAME = 'yarn-vault'
+const VAULT_STORE_NAME = 'session-keys'
+const VAULT_DB_VERSION = 1
+const PRIVATE_KEY_RECORD = 'active-private-key'
+const PUBLIC_KEY_RECORD = 'active-public-key'
+
 let activePrivateKey: CryptoKey | null = null
 let activePublicKey: CryptoKey | null = null
+
+const openVault = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB is not available in this environment.'))
+      return
+    }
+
+    const request = indexedDB.open(VAULT_DB_NAME, VAULT_DB_VERSION)
+
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(VAULT_STORE_NAME)) {
+        db.createObjectStore(VAULT_STORE_NAME)
+      }
+    }
+
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+const vaultPut = async (key: string, value: CryptoKey): Promise<void> => {
+  const db = await openVault()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(VAULT_STORE_NAME, 'readwrite')
+    tx.objectStore(VAULT_STORE_NAME).put(value, key)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+  db.close()
+}
+
+const vaultGet = async (key: string): Promise<CryptoKey | null> => {
+  const db = await openVault()
+  const value = await new Promise<CryptoKey | null>((resolve, reject) => {
+    const tx = db.transaction(VAULT_STORE_NAME, 'readonly')
+    const req = tx.objectStore(VAULT_STORE_NAME).get(key)
+    req.onsuccess = () => resolve((req.result as CryptoKey | undefined) ?? null)
+    req.onerror = () => reject(req.error)
+  })
+  db.close()
+  return value
+}
+
+const vaultClear = async (): Promise<void> => {
+  if (typeof indexedDB === 'undefined') return
+  const db = await openVault()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(VAULT_STORE_NAME, 'readwrite')
+    tx.objectStore(VAULT_STORE_NAME).clear()
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+  db.close()
+}
 
 export interface GeneratedAccountKeys {
   publicKeyBase64: string
@@ -172,6 +236,51 @@ export const useCrypto = () => {
     activePublicKey = null
   }
 
+  const storeSessionKey = async (
+    privateKey: CryptoKey,
+    publicKey?: CryptoKey,
+  ): Promise<void> => {
+    if (typeof indexedDB === 'undefined') return
+    try {
+      await vaultPut(PRIVATE_KEY_RECORD, privateKey)
+      if (publicKey) {
+        await vaultPut(PUBLIC_KEY_RECORD, publicKey)
+      } else if (activePublicKey) {
+        await vaultPut(PUBLIC_KEY_RECORD, activePublicKey)
+      }
+    } catch (err) {
+      console.error('Failed to persist session key to vault', err)
+    }
+  }
+
+  const retrieveSessionKey = async (): Promise<CryptoKey | null> => {
+    if (typeof indexedDB === 'undefined') return null
+    try {
+      const privateKey = await vaultGet(PRIVATE_KEY_RECORD)
+      if (privateKey) {
+        activePrivateKey = privateKey
+      }
+      const publicKey = await vaultGet(PUBLIC_KEY_RECORD)
+      if (publicKey) {
+        activePublicKey = publicKey
+      }
+      return privateKey
+    } catch (err) {
+      console.error('Failed to retrieve session key from vault', err)
+      return null
+    }
+  }
+
+  const clearSessionKey = async (): Promise<void> => {
+    activePrivateKey = null
+    activePublicKey = null
+    try {
+      await vaultClear()
+    } catch (err) {
+      console.error('Failed to clear vault', err)
+    }
+  }
+
   const encryptMessage = async (
     plaintext: string,
     recipientPublicKeyBase64: string,
@@ -255,6 +364,9 @@ export const useCrypto = () => {
     getActivePrivateKey,
     getActivePublicKey,
     clearActiveKeys,
+    storeSessionKey,
+    retrieveSessionKey,
+    clearSessionKey,
     encryptMessage,
     decryptMessage,
     arrayBufferToBase64,
