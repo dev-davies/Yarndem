@@ -9,14 +9,14 @@
           </svg>
         </div>
         <h2 class="text-3xl font-display font-medium text-yarn-black tracking-tight">
-          Welcome back
+          Create your vault
         </h2>
         <p class="mt-3 text-sm text-yarn-black/50 font-light">
-          Access your secure YarnDem vault
+          Set up your secure YarnDem account
         </p>
       </div>
 
-      <form class="mt-10 space-y-6" @submit.prevent="handleLogin">
+      <form class="mt-10 space-y-6" @submit.prevent="handleRegister">
         <div class="space-y-4">
           <div>
             <label for="username" class="block text-xs font-semibold uppercase tracking-widest text-yarn-black/40 mb-2 ml-1">Username</label>
@@ -33,7 +33,20 @@
             />
           </div>
 
-
+          <div>
+            <label for="displayName" class="block text-xs font-semibold uppercase tracking-widest text-yarn-black/40 mb-2 ml-1">Display Name</label>
+            <input
+              id="displayName"
+              v-model="displayName"
+              name="displayName"
+              type="text"
+              required
+              autocomplete="name"
+              :disabled="isLoading"
+              class="appearance-none relative block w-full px-4 py-4 border border-yarn-black/10 placeholder-yarn-black/30 text-yarn-black bg-yarn-cream/30 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yarn-terracotta/20 focus:border-yarn-terracotta transition-all duration-300 sm:text-sm disabled:opacity-50"
+              placeholder="How others will see you"
+            />
+          </div>
 
           <div>
             <label for="password" class="block text-xs font-semibold uppercase tracking-widest text-yarn-black/40 mb-2 ml-1">Password</label>
@@ -43,7 +56,7 @@
               name="password"
               type="password"
               required
-              autocomplete="current-password"
+              autocomplete="new-password"
               :disabled="isLoading"
               class="appearance-none relative block w-full px-4 py-4 border border-yarn-black/10 placeholder-yarn-black/30 text-yarn-black bg-yarn-cream/30 rounded-2xl focus:outline-none focus:ring-2 focus:ring-yarn-terracotta/20 focus:border-yarn-terracotta transition-all duration-300 sm:text-sm disabled:opacity-50"
               placeholder="••••••••"
@@ -78,14 +91,14 @@
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
             </svg>
-            <span>{{ buttonLabel }}</span>
+            <span>{{ isLoading ? 'Generating Keys…' : 'Generate Keys & Register' }}</span>
           </button>
         </div>
 
         <div class="text-center space-y-4">
           <p class="text-xs text-yarn-black/60">
-            Don't have an account? 
-            <NuxtLink to="/signup" class="text-yarn-terracotta font-medium hover:underline transition-all">Create one</NuxtLink>
+            Already have an account? 
+            <NuxtLink to="/login" class="text-yarn-terracotta font-medium hover:underline transition-all">Login</NuxtLink>
           </p>
 
           <div class="flex items-center justify-center space-x-2 opacity-60">
@@ -103,28 +116,25 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
-const { login } = useAuth()
+const { register } = useAuth()
 
 const username = ref('')
+const displayName = ref('')
 const password = ref('')
 const isLoading = ref(false)
 const errorMessage = ref('')
 
-const buttonLabel = computed(() => {
-  return isLoading.value ? 'Decrypting…' : 'Login & Decrypt'
-})
-
-const handleLogin = async () => {
+const handleRegister = async () => {
   if (isLoading.value) return
   errorMessage.value = ''
   isLoading.value = true
 
   try {
-    const result = await login(username.value, password.value)
+    const result = await register(username.value, displayName.value, password.value)
 
     if (!result.success) {
       errorMessage.value = result.error || 'Something went wrong. Please try again.'
@@ -145,7 +155,6 @@ definePageMeta({
 </script>
 
 <style scoped>
-/* Custom shadow for the card to give it depth without being heavy */
 .shadow-2xl {
   box-shadow: 0 25px 50px -12px rgba(18, 18, 18, 0.05);
 }

@@ -1,5 +1,6 @@
 export default defineNuxtRouteMiddleware((to) => {
-  if (to.path === '/login') return
+  const publicRoutes = ['/login', '/signup']
+  if (publicRoutes.includes(to.path)) return
 
   const accessToken = useCookie<string | null>('access_token')
   if (!accessToken.value) {
