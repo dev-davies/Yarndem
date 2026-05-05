@@ -1,22 +1,8 @@
 <template>
-  <div class="min-h-screen bg-yarn-cream text-yarn-black font-sans selection:bg-yarn-terracotta selection:text-white">
-    <!-- Navigation / Header (Optional placeholder) -->
-    <header class="py-8 px-6 md:px-12 lg:px-24">
-      <nav class="flex justify-between items-center max-w-7xl mx-auto">
-        <h1 class="text-2xl font-display font-semibold tracking-tight text-yarn-black">YarnDem</h1>
-        <div class="hidden md:flex space-x-12 text-sm uppercase tracking-widest font-medium">
-          <a href="#" class="hover:text-yarn-terracotta transition-colors duration-300">Messages</a>
-          <a href="#" class="hover:text-yarn-terracotta transition-colors duration-300">Contacts</a>
-          <a href="#" class="hover:text-yarn-terracotta transition-colors duration-300">Vault</a>
-        </div>
-      </nav>
-    </header>
-
-    <main class="max-w-7xl mx-auto px-6 md:px-12 lg:px-24 pb-20">
+  <div>
+    <NuxtLayout>
       <NuxtPage />
-    </main>
-
-    <!-- Global Nuxt components -->
+    </NuxtLayout>
     <NuxtRouteAnnouncer />
   </div>
 </template>

@@ -16,6 +16,9 @@ export default {
           terracotta: '#C05A3E',
           ochre: '#D4A373',
           stone: '#E5E4D7',
+          bg: '#FDFCF0',
+          surface: '#FFFFFF',
+          border: 'rgba(18, 18, 18, 0.1)',
         }
       },
       fontFamily: {
