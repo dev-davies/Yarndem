@@ -71,7 +71,7 @@
               ? 'bg-yarn-surface border-l-4 border-yarn-terracotta shadow-sm shadow-yarn-black/5'
               : 'hover:bg-yarn-surface/50 border-l-4 border-transparent'
           ]"
-          @click="() => { if (user) { console.log('[ChatSidebar] Search result clicked:', user); onSelectUser(user); } }"
+          @click="user && onSelectUser(user)"
         >
           <template v-if="user && user.id">
             <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm flex-shrink-0">
@@ -115,7 +115,7 @@
               ? 'bg-yarn-surface border-l-4 border-yarn-terracotta shadow-sm shadow-yarn-black/5'
               : 'hover:bg-yarn-surface/50 border-l-4 border-transparent'
           ]"
-          @click="() => { if (conversation?.contact) { console.log('[ChatSidebar] Conversation clicked:', conversation.contact); onSelectUser(conversation.contact); } }"
+          @click="conversation?.contact && onSelectUser(conversation.contact)"
         >
           <template v-if="conversation && conversation.contact && conversation.contact.id">
             <!-- Avatar -->
@@ -245,8 +245,7 @@ const onSelectUser = async (user: Contact) => {
 }
 
 const isActive = (user: Contact | null | undefined): boolean => {
-  if (!user || !activeContact.value) return false
-  return activeContact.value.id === user.id
+  return !!user && !!activeContact.value && activeContact.value.id === user.id
 }
 
 const getInitials = (name: string): string => {

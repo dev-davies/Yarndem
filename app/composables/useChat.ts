@@ -156,16 +156,10 @@ export const useChat = () => {
   }
 
   const setActiveContact = async (user: Contact | null): Promise<void> => {
+    if (!user) return
+
     console.log('[setActiveContact] Called with user:', user)
     
-    if (!user) {
-      console.log('[setActiveContact] User is null/undefined, clearing active contact')
-      activeContact.value = null
-      activePublicKey.value = null
-      isLoadingPublicKey.value = false
-      return
-    }
-
     if (!user.id) {
       console.error('[setActiveContact] User object missing id property:', user)
       return
@@ -176,10 +170,12 @@ export const useChat = () => {
     activeContact.value = user
     activePublicKey.value = null
 
-    const existing = conversations.value.find((c) => c.contact.id === user.id)
+    // Null-safe find to prevent crash
+    const existing = conversations.value.find(c => c && user && (c.contact?.id === user.id || c.id === user.id))
+    
     if (existing) {
       conversations.value = conversations.value.map((c) =>
-        c.contact.id === user.id
+        (c.contact?.id === user.id || c.id === user.id)
           ? { ...c, contact: { ...c.contact, ...user }, updated_at: new Date().toISOString() }
           : c
       )
@@ -201,7 +197,7 @@ export const useChat = () => {
       return
     }
 
-    console.log('[setActiveContact] Public key missing, fetching from API...')
+    console.log('[setActiveContact] Public key missing, fetching full profile from API...')
     isLoadingPublicKey.value = true
     try {
       const response = await useApi<{ id: string; username: string; display_name: string; public_key?: string }>(
@@ -216,19 +212,19 @@ export const useChat = () => {
         return
       }
 
+      // Update activeContact with the full profile including the public_key
       const fullProfile = { ...user, ...response }
       activeContact.value = fullProfile
       activePublicKey.value = response.public_key || null
 
       console.log('[setActiveContact] Updated activePublicKey:', !!activePublicKey.value)
 
-      if (response.public_key) {
-        conversations.value = conversations.value.map((c) =>
-          c.contact.id === user.id
-            ? { ...c, contact: fullProfile }
-            : c
-        )
-      }
+      // Sync the updated profile back into the conversations list
+      conversations.value = conversations.value.map((c) =>
+        (c.contact?.id === user.id || c.id === user.id)
+          ? { ...c, contact: fullProfile }
+          : c
+      )
     } catch (err) {
       console.error('[setActiveContact] Failed to fetch public key:', err)
       if (activeContact.value?.id === user.id) {
