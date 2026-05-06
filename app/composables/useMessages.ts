@@ -88,7 +88,7 @@ export const useMessages = () => {
     }
   }
 
-  const connectWS = (): WebSocket | null => {
+  const connectWS = async (): Promise<WebSocket | null> => {
     if (typeof window === 'undefined') return null
     if (!accessToken.value) {
       console.warn('Cannot open WebSocket: no access token.')
@@ -96,6 +96,22 @@ export const useMessages = () => {
     }
     if (ws.value && ws.value.readyState === WebSocket.OPEN) {
       return ws.value
+    }
+
+    const { getActivePrivateKey, retrieveSessionKey, setActivePublicKey, getActivePublicKey } = useCrypto()
+    if (!getActivePrivateKey()) {
+      try {
+        await retrieveSessionKey()
+      } catch (err) {
+        console.warn('Failed to rehydrate session key before WS connect', err)
+      }
+    }
+    if (!getActivePublicKey() && currentUser.value?.public_key) {
+      try {
+        await setActivePublicKey(currentUser.value.public_key)
+      } catch (err) {
+        console.warn('Failed to import own public key before WS connect', err)
+      }
     }
 
     manuallyClosed = false
@@ -149,8 +165,13 @@ export const useMessages = () => {
         return
       }
 
-      if (frame.type === 'message.receive') {
-        const envelope = (frame.payload || frame.data) as EncryptedMessageEnvelope | undefined
+      if (frame.type === 'message.receive' || frame.type === 'message') {
+        const raw = (frame.payload || frame.data || (frame as unknown)) as
+          | EncryptedMessageEnvelope
+          | undefined
+        const envelope = raw && (raw as EncryptedMessageEnvelope).ciphertext
+          ? (raw as EncryptedMessageEnvelope)
+          : undefined
         if (!envelope) return
 
         const myId = currentUser.value?.id
@@ -399,12 +420,11 @@ export const useMessages = () => {
 
     const wireBody = {
       to: toUserId,
-      payload: {
-        ciphertext: payload.ciphertext,
-        iv: payload.iv,
-        encryptedKey: payload.encryptedKey,
-        encryptedKeyForSelf: payload.encryptedKeyForSelf,
-      },
+      recipient_id: toUserId,
+      ciphertext: payload.ciphertext,
+      iv: payload.iv,
+      encrypted_key: payload.encryptedKey,
+      encrypted_key_for_self: payload.encryptedKeyForSelf,
     }
 
     const convoKey = conversationKey(toUserId)
@@ -422,7 +442,7 @@ export const useMessages = () => {
     const socket = ws.value
     if (socket && socket.readyState === WebSocket.OPEN) {
       try {
-        socket.send(JSON.stringify({ type: 'message.send', payload: wireBody }))
+        socket.send(JSON.stringify({ type: 'message.send', ...wireBody }))
         await saveLocalMessage(convoKey, optimistic as never)
         return optimistic
       } catch (err) {
