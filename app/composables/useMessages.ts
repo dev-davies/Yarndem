@@ -137,6 +137,7 @@ export const useMessages = () => {
         console.error('Invalid WS frame', err)
         return
       }
+      console.log('[useMessages] WS frame in:', frame.type, frame)
 
       if (frame.type === 'typing') {
         const payload = (frame.payload || frame.data) as { sender_id?: string } | undefined
@@ -441,22 +442,13 @@ export const useMessages = () => {
     }
     messages.value = [...messages.value, optimistic]
 
-    const socket = ws.value
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      try {
-        socket.send(JSON.stringify({ type: 'message.send', ...wireBody }))
-        await saveLocalMessage(convoKey, optimistic as never)
-        return optimistic
-      } catch (err) {
-        console.warn('WS send failed, falling back to REST.', err)
-      }
-    }
-
     try {
+      console.log('[useMessages] POST /messages', { to: wireBody.to, hasPayload: !!wireBody.payload })
       const saved = await useApi<EncryptedMessageEnvelope>('/messages', {
         method: 'POST',
         body: wireBody,
       })
+      console.log('[useMessages] /messages saved', { id: saved?.id, delivered: saved?.delivered })
 
       const idx = messages.value.findIndex((m) => m.id === optimistic.id)
       let finalMessage: DecryptedMessage = optimistic
@@ -474,6 +466,7 @@ export const useMessages = () => {
       await saveLocalMessage(convoKey, finalMessage as never)
       return finalMessage
     } catch (err) {
+      console.error('[useMessages] POST /messages failed', err)
       const idx = messages.value.findIndex((m) => m.id === optimistic.id)
       if (idx !== -1) {
         const next = [...messages.value]
