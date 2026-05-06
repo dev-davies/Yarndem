@@ -11,15 +11,19 @@ export interface DecryptedMessage {
   status?: 'sent' | 'delivered' | 'read' | 'failed'
 }
 
-interface EncryptedMessageEnvelope {
-  id: string
-  conversation_id?: string
-  sender_id: string
-  recipient_id: string
+interface ServerEncryptedPayload {
   ciphertext: string
   iv: string
-  encrypted_key: string
-  encrypted_key_for_self?: string
+  encryptedKey: string
+  encryptedKeyForSelf: string
+}
+
+interface EncryptedMessageEnvelope {
+  id: string
+  from_user_id: string
+  to_user_id: string
+  payload: ServerEncryptedPayload
+  delivered?: boolean
   created_at: string
 }
 
@@ -57,16 +61,16 @@ export const useMessages = () => {
   }
 
   const toEncryptedPayload = (envelope: EncryptedMessageEnvelope): EncryptedMessagePayload => ({
-    ciphertext: envelope.ciphertext,
-    iv: envelope.iv,
-    encryptedKey: envelope.encrypted_key,
-    encryptedKeyForSelf: envelope.encrypted_key_for_self || '',
+    ciphertext: envelope.payload?.ciphertext || '',
+    iv: envelope.payload?.iv || '',
+    encryptedKey: envelope.payload?.encryptedKey || '',
+    encryptedKeyForSelf: envelope.payload?.encryptedKeyForSelf || '',
   })
 
   const decryptEnvelope = async (
     envelope: EncryptedMessageEnvelope,
   ): Promise<DecryptedMessage> => {
-    const sentBySelf = isMine(envelope.sender_id)
+    const sentBySelf = isMine(envelope.from_user_id)
     let text: string
     try {
       text = await decryptMessage(toEncryptedPayload(envelope), sentBySelf, envelope.id)
@@ -78,13 +82,12 @@ export const useMessages = () => {
 
     return {
       id: envelope.id,
-      conversationId: envelope.conversation_id,
-      senderId: envelope.sender_id,
-      recipientId: envelope.recipient_id,
+      senderId: envelope.from_user_id,
+      recipientId: envelope.to_user_id,
       text,
       createdAt: envelope.created_at,
       sentBySelf,
-      status: 'delivered',
+      status: envelope.delivered ? 'delivered' : 'sent',
     }
   }
 
@@ -166,16 +169,14 @@ export const useMessages = () => {
       }
 
       if (frame.type === 'message.receive' || frame.type === 'message') {
-        const raw = (frame.payload || frame.data || (frame as unknown)) as
-          | EncryptedMessageEnvelope
-          | undefined
-        const envelope = raw && (raw as EncryptedMessageEnvelope).ciphertext
-          ? (raw as EncryptedMessageEnvelope)
-          : undefined
-        if (!envelope) return
+        const envelope = (frame.payload || frame.data) as EncryptedMessageEnvelope | undefined
+        if (!envelope || !envelope.payload) {
+          console.warn('[useMessages] Received frame without payload', frame)
+          return
+        }
 
         const myId = currentUser.value?.id
-        const otherUserId = envelope.sender_id === myId ? envelope.recipient_id : envelope.sender_id
+        const otherUserId = envelope.from_user_id === myId ? envelope.to_user_id : envelope.from_user_id
         const decrypted = await decryptEnvelope(envelope)
 
         try {
@@ -210,7 +211,7 @@ export const useMessages = () => {
         const activeId = activeConversationUserId.value
         const involvesActive =
           !!activeId &&
-          (envelope.sender_id === activeId || envelope.recipient_id === activeId)
+          (envelope.from_user_id === activeId || envelope.to_user_id === activeId)
         if (!involvesActive) return
 
         if (messages.value.some((m) => m.id === decrypted.id)) return
@@ -420,11 +421,12 @@ export const useMessages = () => {
 
     const wireBody = {
       to: toUserId,
-      recipient_id: toUserId,
-      ciphertext: payload.ciphertext,
-      iv: payload.iv,
-      encrypted_key: payload.encryptedKey,
-      encrypted_key_for_self: payload.encryptedKeyForSelf,
+      payload: {
+        ciphertext: payload.ciphertext,
+        iv: payload.iv,
+        encryptedKey: payload.encryptedKey,
+        encryptedKeyForSelf: payload.encryptedKeyForSelf,
+      },
     }
 
     const convoKey = conversationKey(toUserId)
@@ -463,8 +465,7 @@ export const useMessages = () => {
           ...optimistic,
           id: saved.id,
           createdAt: saved.created_at,
-          conversationId: saved.conversation_id,
-          status: 'delivered',
+          status: saved.delivered ? 'delivered' : 'sent',
         }
         const next = [...messages.value]
         next[idx] = finalMessage
