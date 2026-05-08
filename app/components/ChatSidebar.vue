@@ -141,15 +141,23 @@
                 <h3 class="text-sm font-bold text-yarn-black truncate">
                   {{ conversation.contact.display_name || conversation.contact.username }}
                 </h3>
-                <span class="text-[10px] font-medium text-yarn-black/40 uppercase tracking-tighter">
-                  {{ formatTime(conversation.last_message?.created_at || conversation.updated_at) }}
-                </span>
+                <div class="ml-2 flex items-center gap-2 flex-shrink-0">
+                  <span
+                    v-if="conversation.unread_count"
+                    class="min-w-5 h-5 px-1.5 rounded-full bg-yarn-terracotta text-white text-[10px] font-bold flex items-center justify-center"
+                  >
+                    {{ conversation.unread_count > 9 ? '9+' : conversation.unread_count }}
+                  </span>
+                  <span class="text-[10px] font-medium text-yarn-black/40 uppercase tracking-tighter">
+                    {{ formatTime(conversation.last_message?.created_at || conversation.updated_at) }}
+                  </span>
+                </div>
               </div>
               <p
                 class="text-xs truncate mt-1"
                 :class="isActive(conversation.contact) ? 'text-yarn-black/60' : 'text-yarn-black/40'"
               >
-                @{{ conversation.contact.username }} - {{ isUserOnline(conversation.contact.id) ? 'Online' : 'Offline' }}
+                {{ conversationPreview(conversation) }}
               </p>
             </div>
           </template>
@@ -263,6 +271,13 @@ const isActive = (user: Contact | null | undefined): boolean => {
 
 const isUserOnline = (userId: string): boolean => {
   return !!isConnected.value && !!contactPresence.value[userId]?.online
+}
+
+const conversationPreview = (conversation: Conversation): string => {
+  const status = isUserOnline(conversation.contact.id) ? 'Online' : 'Offline'
+  const preview = conversation.last_message?.preview
+  if (preview) return preview
+  return `@${conversation.contact.username} - ${status}`
 }
 
 const getInitials = (name: string): string => {

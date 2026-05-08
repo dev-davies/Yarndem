@@ -44,15 +44,21 @@ type PresencePayload =
       userId?: string
       id?: string
       sender_id?: string
+      user?: PresencePayload
+      contact?: PresencePayload
       online?: boolean
       is_online?: boolean
+      isOnline?: boolean
       status?: string
       last_seen?: string
       lastSeen?: string
       users?: PresencePayload[]
+      online_users?: PresencePayload[]
+      offline_users?: PresencePayload[]
       online_user_ids?: string[]
       offline_user_ids?: string[]
     }
+  | string
   | PresencePayload[]
   | undefined
 
@@ -61,7 +67,7 @@ export const useMessages = () => {
   const { encryptMessage, decryptMessage, getActivePublicKey, setActivePublicKey } = useCrypto()
   const { currentUser } = useAuth()
   const { saveLocalMessage, getLocalMessages, getRecentContacts } = useStorage()
-  const { conversations, setActiveContact } = useChat()
+  const { conversations, activeContact, upsertConversation } = useChat()
 
   const getMyId = (): string | null => currentUser.value?.id ?? null
 
@@ -101,24 +107,48 @@ export const useMessages = () => {
   const normalizePresence = (payload: PresencePayload, frameType: string): boolean => {
     if (!payload) return false
 
+    if (typeof payload === 'string') {
+      setContactPresence(payload, frameType.includes('online') && !frameType.includes('offline'))
+      return true
+    }
+
     if (Array.isArray(payload)) {
       payload.forEach((item) => normalizePresence(item, frameType))
       return true
     }
 
+    let handled = false
+
     if (Array.isArray(payload.online_user_ids)) {
       payload.online_user_ids.forEach((id) => setContactPresence(id, true))
+      handled = true
     }
     if (Array.isArray(payload.offline_user_ids)) {
       payload.offline_user_ids.forEach((id) => setContactPresence(id, false, new Date().toISOString()))
+      handled = true
     }
     if (Array.isArray(payload.users)) {
       payload.users.forEach((user) => normalizePresence(user, frameType))
+      handled = true
+    }
+    if (Array.isArray(payload.online_users)) {
+      payload.online_users.forEach((user) => normalizePresence(user, 'online'))
+      handled = true
+    }
+    if (Array.isArray(payload.offline_users)) {
+      payload.offline_users.forEach((user) => normalizePresence(user, 'offline'))
+      handled = true
+    }
+    if (payload.user) {
+      handled = normalizePresence(payload.user, frameType) || handled
+    }
+    if (payload.contact) {
+      handled = normalizePresence(payload.contact, frameType) || handled
     }
 
     const userId = payload.user_id || payload.userId || payload.id || payload.sender_id
     if (!userId) {
-      return !!payload.online_user_ids?.length || !!payload.offline_user_ids?.length || !!payload.users?.length
+      return handled
     }
 
     const status = payload.status?.toLowerCase()
@@ -126,18 +156,20 @@ export const useMessages = () => {
       ? payload.online
       : typeof payload.is_online === 'boolean'
         ? payload.is_online
-        : frameType.includes('offline')
-          ? false
-          : frameType.includes('online')
-            ? true
-            : status === 'online'
+        : typeof payload.isOnline === 'boolean'
+          ? payload.isOnline
+          : frameType.includes('offline')
+            ? false
+            : frameType.includes('online')
+              ? true
+              : status === 'online'
 
-    if (status === 'offline' || typeof payload.online === 'boolean' || typeof payload.is_online === 'boolean' || frameType.includes('online') || frameType.includes('offline')) {
+    if (status === 'online' || status === 'offline' || typeof payload.online === 'boolean' || typeof payload.is_online === 'boolean' || typeof payload.isOnline === 'boolean' || frameType.includes('online') || frameType.includes('offline')) {
       setContactPresence(userId, online, payload.last_seen || payload.lastSeen)
       return true
     }
 
-    return false
+    return handled
   }
 
   const toEncryptedPayload = (envelope: EncryptedMessageEnvelope): EncryptedMessagePayload => ({
@@ -268,6 +300,11 @@ export const useMessages = () => {
         const otherUserId = envelope.from_user_id === myId ? envelope.to_user_id : envelope.from_user_id
         setContactPresence(otherUserId, true)
         const decrypted = await decryptEnvelope(envelope)
+        const activeId = activeConversationUserId.value
+        const involvesActive =
+          !!activeId &&
+          (envelope.from_user_id === activeId || envelope.to_user_id === activeId)
+        const isIncomingForInactiveChat = !decrypted.sentBySelf && !involvesActive
 
         try {
           await saveLocalMessage(conversationKey(otherUserId, myId), decrypted as never)
@@ -275,33 +312,38 @@ export const useMessages = () => {
           console.error('Failed to archive incoming message', err)
         }
 
-        const existingConvo = conversations.value.find((c) => c.contact.id === otherUserId)
-        if (!existingConvo) {
+        const existingConvo = conversations.value.find((c) => c.contact?.id === otherUserId || c.id === otherUserId)
+        let contact = existingConvo?.contact || {
+          id: otherUserId,
+          username: otherUserId,
+          display_name: otherUserId,
+        }
+
+        if (!contact.public_key) {
           try {
             const response = await useApi<{ public_key: string }>(
               `/users/${otherUserId}/public-key`,
               { method: 'GET' },
             )
-            setActiveContact({
-              id: otherUserId,
-              username: otherUserId,
-              display_name: otherUserId,
+            contact = {
+              ...contact,
               public_key: response.public_key,
-            })
+            }
           } catch (err) {
             console.warn(`[useMessages] Failed to fetch public key for unknown sender ${otherUserId}`, err)
-            setActiveContact({
-              id: otherUserId,
-              username: otherUserId,
-              display_name: otherUserId,
-            })
           }
         }
 
-        const activeId = activeConversationUserId.value
-        const involvesActive =
-          !!activeId &&
-          (envelope.from_user_id === activeId || envelope.to_user_id === activeId)
+        upsertConversation(contact, {
+          lastMessage: {
+            id: decrypted.id,
+            preview: decrypted.text,
+            created_at: decrypted.createdAt,
+            sender_id: decrypted.senderId,
+          },
+          unreadIncrement: isIncomingForInactiveChat ? 1 : 0,
+        })
+
         if (!involvesActive) return
 
         if (messages.value.some((m) => m.id === decrypted.id)) return
@@ -552,6 +594,16 @@ export const useMessages = () => {
         messages.value = next
       }
       await saveLocalMessage(convoKey, finalMessage as never)
+      if (activeContact.value) {
+        upsertConversation(activeContact.value, {
+          lastMessage: {
+            id: finalMessage.id,
+            preview: finalMessage.text,
+            created_at: finalMessage.createdAt,
+            sender_id: finalMessage.senderId,
+          },
+        })
+      }
       return finalMessage
     } catch (err) {
       const idx = messages.value.findIndex((m) => m.id === optimistic.id)

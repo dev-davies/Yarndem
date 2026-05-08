@@ -4,6 +4,20 @@ export interface Contact {
   display_name: string
   public_key?: string
   avatar_url?: string | null
+  online?: boolean
+  is_online?: boolean
+  isOnline?: boolean
+  status?: string
+  last_seen?: string
+  lastSeen?: string
+  presence?: {
+    online?: boolean
+    is_online?: boolean
+    isOnline?: boolean
+    status?: string
+    last_seen?: string
+    lastSeen?: string
+  } | null
 }
 
 export interface Conversation {
@@ -26,6 +40,11 @@ export interface ChatResult<T = unknown> {
   error?: string
 }
 
+interface UpsertConversationOptions {
+  lastMessage?: Conversation['last_message']
+  unreadIncrement?: number
+}
+
 export const useChat = () => {
   const { accessToken } = useAuth()
 
@@ -33,6 +52,7 @@ export const useChat = () => {
   const searchResults = useState<Contact[]>('chat:searchResults', () => [])
   const activeContact = useState<Contact | null>('chat:activeContact', () => null)
   const activePublicKey = useState<string | null>('chat:activePublicKey', () => null)
+  const contactPresence = useState<Record<string, { online: boolean; lastSeen?: string }>>('messages:contactPresence', () => ({}))
 
   const isLoadingConversations = useState<boolean>('chat:loadingConversations', () => false)
   const isSearching = useState<boolean>('chat:isSearching', () => false)
@@ -53,6 +73,83 @@ export const useChat = () => {
     return e?.message || 'An unexpected error occurred'
   }
 
+  const syncContactPresence = (contact: Contact | null | undefined): void => {
+    if (!contact?.id) return
+
+    const presence = contact.presence
+    const status = (presence?.status || contact.status)?.toLowerCase()
+    const online = typeof presence?.online === 'boolean'
+      ? presence.online
+      : typeof presence?.is_online === 'boolean'
+        ? presence.is_online
+        : typeof presence?.isOnline === 'boolean'
+          ? presence.isOnline
+          : typeof contact.online === 'boolean'
+            ? contact.online
+            : typeof contact.is_online === 'boolean'
+              ? contact.is_online
+              : typeof contact.isOnline === 'boolean'
+                ? contact.isOnline
+                : status === 'online'
+
+    if (status !== 'online' && status !== 'offline' && typeof presence?.online !== 'boolean' && typeof presence?.is_online !== 'boolean' && typeof presence?.isOnline !== 'boolean' && typeof contact.online !== 'boolean' && typeof contact.is_online !== 'boolean' && typeof contact.isOnline !== 'boolean') {
+      return
+    }
+
+    contactPresence.value = {
+      ...contactPresence.value,
+      [contact.id]: {
+        online,
+        lastSeen: presence?.last_seen || presence?.lastSeen || contact.last_seen || contact.lastSeen || contactPresence.value[contact.id]?.lastSeen,
+      },
+    }
+  }
+
+  const upsertConversation = (
+    contact: Contact,
+    options: UpsertConversationOptions = {},
+  ): void => {
+    if (!contact?.id) return
+
+    syncContactPresence(contact)
+
+    const now = new Date().toISOString()
+    const existing = conversations.value.find((c) => c?.contact?.id === contact.id || c?.id === contact.id)
+    const nextConversation: Conversation = existing
+      ? {
+          ...existing,
+          contact: { ...existing.contact, ...contact },
+          last_message: options.lastMessage || existing.last_message,
+          unread_count: (existing.unread_count || 0) + (options.unreadIncrement || 0),
+          updated_at: options.lastMessage?.created_at || existing.updated_at || now,
+        }
+      : {
+          id: `conv-${contact.id}`,
+          contact,
+          last_message: options.lastMessage || null,
+          unread_count: options.unreadIncrement || 0,
+          updated_at: options.lastMessage?.created_at || now,
+        }
+
+    conversations.value = [
+      nextConversation,
+      ...conversations.value.filter((c) => c && c !== existing && c.contact?.id !== contact.id && c.id !== contact.id),
+    ].sort((a, b) => {
+      const aTime = new Date(a.last_message?.created_at || a.updated_at || 0).getTime()
+      const bTime = new Date(b.last_message?.created_at || b.updated_at || 0).getTime()
+      return bTime - aTime
+    })
+  }
+
+  const markConversationRead = (contactId: string): void => {
+    if (!contactId) return
+    conversations.value = conversations.value.map((conversation) =>
+      conversation?.contact?.id === contactId || conversation?.id === contactId
+        ? { ...conversation, unread_count: 0 }
+        : conversation,
+    )
+  }
+
   const loadConversations = async (): Promise<ChatResult<Conversation[]>> => {
     if (!accessToken.value) {
       return { success: false, error: 'Not authenticated' }
@@ -67,6 +164,7 @@ export const useChat = () => {
       )
 
       const list = Array.isArray(response) ? response : response?.conversations ?? []
+      list.forEach((conversation) => syncContactPresence(conversation?.contact))
       conversations.value = list
       return { success: true, data: list }
     } catch (err) {
@@ -110,6 +208,7 @@ export const useChat = () => {
 
       const list = Array.isArray(response) ? response : response?.users ?? []
       const validResults = list.filter(u => u && u.id && u.username)
+      validResults.forEach(syncContactPresence)
       console.log('[Search Results]', validResults.map(u => ({ id: u.id, username: u.username, has_public_key: !!u.public_key })))
       searchResults.value = validResults
       return { success: true, data: validResults }
@@ -169,26 +268,10 @@ export const useChat = () => {
     
     activeContact.value = user
     activePublicKey.value = null
+    syncContactPresence(user)
 
-    // Null-safe find to prevent crash
-    const existing = conversations.value.find(c => c && user && (c.contact?.id === user.id || c.id === user.id))
-    
-    if (existing) {
-      conversations.value = conversations.value.map((c) =>
-        (c.contact?.id === user.id || c.id === user.id)
-          ? { ...c, contact: { ...c.contact, ...user }, updated_at: new Date().toISOString() }
-          : c
-      )
-    } else {
-      conversations.value = [
-        {
-          id: `conv-${user.id}`,
-          contact: user,
-          updated_at: new Date().toISOString(),
-        },
-        ...conversations.value,
-      ]
-    }
+    upsertConversation(user)
+    markConversationRead(user.id)
 
     if (user.public_key) {
       console.log('[setActiveContact] Public key already present, setting activePublicKey')
@@ -217,15 +300,12 @@ export const useChat = () => {
         const fullProfile = { ...user, public_key: response.public_key }
         activeContact.value = fullProfile
         activePublicKey.value = response.public_key
+        syncContactPresence(fullProfile)
 
         console.log('[setActiveContact] Updated activePublicKey:', !!activePublicKey.value)
 
         // Sync the updated profile back into the conversations list
-        conversations.value = conversations.value.map((c) =>
-          (c.contact?.id === user.id || c.id === user.id)
-            ? { ...c, contact: fullProfile }
-            : c
-        )
+        upsertConversation(fullProfile)
       } else {
         console.warn('[setActiveContact] API returned success but no public key')
         activePublicKey.value = null
@@ -257,5 +337,7 @@ export const useChat = () => {
     searchUsers,
     clearSearch,
     setActiveContact,
+    upsertConversation,
+    markConversationRead,
   }
 }
