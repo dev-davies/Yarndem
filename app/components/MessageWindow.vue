@@ -68,12 +68,12 @@
     <!-- Message Area -->
     <div ref="scrollEl" class="flex-1 overflow-y-auto px-3 py-4 sm:p-4 md:p-6 space-y-3 md:space-y-6 custom-scrollbar bg-[radial-gradient(#C05A3E05_1px,transparent_1px)] [background-size:20px_20px]">
       <div v-if="isLoadingHistory" class="flex justify-center py-8">
-        <span class="text-xs text-yarn-black/40 uppercase tracking-widest">Decrypting messages…</span>
+        <span class="text-xs text-yarn-black/40 uppercase tracking-widest">Decrypting messages...</span>
       </div>
 
       <div v-else-if="messages.length === 0" class="flex justify-center py-12">
         <p class="text-xs text-yarn-black/40 max-w-xs text-center">
-          No messages yet. Say something — it'll be end-to-end encrypted before it leaves your device.
+          No messages yet. Say something - it'll be end-to-end encrypted before it leaves your device.
         </p>
       </div>
 
@@ -95,14 +95,38 @@
             message.status === 'failed' ? 'opacity-60 ring-1 ring-red-400/40' : ''
           ]"
         >
-          <p class="text-sm leading-relaxed whitespace-pre-wrap break-words">{{ message.text }}</p>
+          <div v-if="message.kind === 'file' && message.attachment" class="space-y-2">
+            <img
+              v-if="isImageAttachment(message.attachment)"
+              :src="attachmentUrl(message.attachment)"
+              :alt="message.attachment.name"
+              class="max-h-72 w-full rounded-xl object-cover"
+            />
+            <a
+              :href="attachmentUrl(message.attachment)"
+              :download="message.attachment.name"
+              class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors"
+              :class="message.sentBySelf ? 'bg-white/10 hover:bg-white/15' : 'bg-yarn-bg hover:bg-yarn-stone'"
+            >
+              <span class="h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0" :class="message.sentBySelf ? 'bg-white/10' : 'bg-yarn-stone'">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                </svg>
+              </span>
+              <span class="min-w-0">
+                <span class="block truncate font-semibold">{{ message.attachment.name }}</span>
+                <span class="block text-[10px] uppercase opacity-60">{{ formatFileSize(message.attachment.size) }}</span>
+              </span>
+            </a>
+          </div>
+          <p v-else class="text-sm leading-relaxed whitespace-pre-wrap break-words">{{ message.text }}</p>
 
           <div
             class="mt-2 text-[9px] uppercase tracking-tighter opacity-50 flex items-center gap-1.5"
             :class="message.sentBySelf ? 'justify-end' : 'justify-start'"
           >
             <span>{{ formatTime(message.createdAt) }}</span>
-            <span v-if="message.sentBySelf && message.status === 'failed'" class="text-red-300">• Failed</span>
+            <span v-if="message.sentBySelf && message.status === 'failed'" class="text-red-300">Failed</span>
             <span
               v-else-if="message.sentBySelf"
               class="inline-flex items-center"
@@ -147,10 +171,19 @@
 
       <form class="flex items-center gap-2 md:gap-4 max-w-5xl mx-auto" @submit.prevent="onSend">
         <!-- Attachment Button -->
+        <input
+          ref="fileInput"
+          type="file"
+          class="sr-only"
+          :disabled="!canSend || isSending"
+          @change="onFileSelected"
+        />
         <button
           type="button"
-          class="hidden sm:flex p-3 md:p-4 text-yarn-black/40 hover:text-yarn-black transition-colors duration-300 flex-shrink-0"
+          class="flex h-11 w-11 md:h-12 md:w-12 items-center justify-center rounded-full text-yarn-black/40 hover:text-yarn-black hover:bg-yarn-bg transition-colors duration-300 flex-shrink-0 disabled:opacity-40"
           title="Attach file"
+          :disabled="!canSend || isSending"
+          @click="fileInput?.click()"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -184,6 +217,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import type { MessageAttachment } from '~/composables/useMessages'
 
 const emit = defineEmits<{
   back: []
@@ -199,6 +233,7 @@ const {
   loadHistory,
   clearMessages,
   sendMessage,
+  sendFileMessage,
   sendTypingEvent,
   sendReadReceipt,
 } = useMessages()
@@ -211,6 +246,7 @@ const isSending = ref(false)
 const isLoadingHistory = ref(false)
 const sendError = ref('')
 const scrollEl = ref<HTMLDivElement | null>(null)
+const fileInput = ref<HTMLInputElement | null>(null)
 
 const contactDisplayName = computed(() => {
   if (!activeContact.value) return ''
@@ -251,8 +287,8 @@ const canSend = computed(() => {
 })
 
 const inputPlaceholder = computed(() => {
-  if (isLoadingPublicKey.value) return 'Fetching recipient key…'
-  if (!activePublicKey.value) return 'Recipient public key missing — cannot send'
+  if (isLoadingPublicKey.value) return 'Fetching recipient key...'
+  if (!activePublicKey.value) return 'Recipient public key missing - cannot send'
   return 'Type a secure message...'
 })
 
@@ -260,6 +296,20 @@ const formatTime = (iso: string): string => {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+}
+
+const attachmentUrl = (attachment: MessageAttachment): string => {
+  return `data:${attachment.mimeType};base64,${attachment.dataBase64}`
+}
+
+const isImageAttachment = (attachment: MessageAttachment): boolean => {
+  return attachment.mimeType.startsWith('image/')
+}
+
+const formatFileSize = (size: number): string => {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
 const scrollToBottom = async () => {
@@ -351,6 +401,34 @@ const onSend = async () => {
       || 'Failed to send message.'
     sendError.value = msg
   } finally {
+    isSending.value = false
+  }
+}
+
+const onFileSelected = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file || !activeContact.value || !canSend.value) {
+    input.value = ''
+    return
+  }
+
+  isSending.value = true
+  sendError.value = ''
+
+  try {
+    await sendFileMessage(
+      activeContact.value.id,
+      file,
+      activePublicKey.value as string,
+    )
+  } catch (err) {
+    const msg = (err as { data?: { message?: string }; message?: string })?.data?.message
+      || (err as { message?: string })?.message
+      || 'Failed to send file.'
+    sendError.value = msg
+  } finally {
+    input.value = ''
     isSending.value = false
   }
 }

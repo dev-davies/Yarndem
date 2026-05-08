@@ -9,6 +9,13 @@ interface StoredMessage {
   senderId: string
   recipientId: string
   text: string
+  kind?: 'text' | 'file'
+  attachment?: {
+    name: string
+    mimeType: string
+    size: number
+    dataBase64: string
+  }
   createdAt: string
   sentBySelf: boolean
   status?: 'sent' | 'delivered' | 'read' | 'failed'

@@ -6,9 +6,18 @@ export interface DecryptedMessage {
   senderId: string
   recipientId: string
   text: string
+  kind?: 'text' | 'file'
+  attachment?: MessageAttachment
   createdAt: string
   sentBySelf: boolean
   status?: 'sent' | 'delivered' | 'read' | 'failed'
+}
+
+export interface MessageAttachment {
+  name: string
+  mimeType: string
+  size: number
+  dataBase64: string
 }
 
 interface ServerEncryptedPayload {
@@ -46,6 +55,19 @@ interface ContactPresence {
   lastSeen?: string
 }
 
+interface EncodedFileMessage {
+  __yarn_message_type: 'file'
+  version: 1
+  file: MessageAttachment
+}
+
+type SendableMessageContent = {
+  plaintext: string
+  preview: string
+  kind?: DecryptedMessage['kind']
+  attachment?: MessageAttachment
+}
+
 type PresencePayload =
   | {
       user_id?: string
@@ -72,10 +94,18 @@ type PresencePayload =
 
 export const useMessages = () => {
   const accessToken = useCookie<string | null>('access_token')
-  const { encryptMessage, decryptMessage, getActivePublicKey, setActivePublicKey } = useCrypto()
+  const {
+    encryptMessage,
+    decryptMessage,
+    getActivePublicKey,
+    setActivePublicKey,
+    arrayBufferToBase64,
+  } = useCrypto()
   const { currentUser } = useAuth()
   const { saveLocalMessage, getLocalMessages, getRecentContacts } = useStorage()
   const { conversations, activeContact, upsertConversation } = useChat()
+
+  const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024
 
   const getMyId = (): string | null => currentUser.value?.id ?? null
 
@@ -205,6 +235,40 @@ export const useMessages = () => {
     encryptedKeyForSelf: envelope.payload?.encryptedKeyForSelf || '',
   })
 
+  const attachmentPreview = (attachment: MessageAttachment): string => {
+    const label = attachment.mimeType.startsWith('image/') ? 'Image' : 'File'
+    return `[${label}] ${attachment.name}`
+  }
+
+  const parsePlaintextMessage = (
+    plaintext: string,
+  ): Pick<DecryptedMessage, 'text' | 'kind' | 'attachment'> => {
+    try {
+      const parsed = JSON.parse(plaintext) as Partial<EncodedFileMessage>
+      const file = parsed?.file
+      if (
+        parsed?.__yarn_message_type === 'file' &&
+        file?.name &&
+        file?.mimeType &&
+        typeof file.size === 'number' &&
+        file.dataBase64
+      ) {
+        return {
+          text: attachmentPreview(file),
+          kind: 'file',
+          attachment: file,
+        }
+      }
+    } catch {
+      /* Plain text messages are not JSON encoded. */
+    }
+
+    return {
+      text: plaintext,
+      kind: 'text',
+    }
+  }
+
   const isMessageFrame = (type: string): boolean => {
     return [
       'message',
@@ -238,11 +302,13 @@ export const useMessages = () => {
       text = `[Unable to decrypt message: ${errorMsg}]`
     }
 
+    const content = parsePlaintextMessage(text)
+
     return {
       id: envelope.id,
       senderId: envelope.from_user_id,
       recipientId: envelope.to_user_id,
-      text,
+      ...content,
       createdAt: envelope.created_at,
       sentBySelf,
       status: envelope.delivered ? 'delivered' : 'sent',
@@ -578,28 +644,40 @@ export const useMessages = () => {
     }
   }
 
-  const sendMessage = async (
+  const ensureOwnPublicKey = async (): Promise<void> => {
+    if (getActivePublicKey()) return
+    if (!currentUser.value?.public_key) {
+      throw new Error('Your public key is missing. Please log in again.')
+    }
+
+    await setActivePublicKey(currentUser.value.public_key)
+  }
+
+  const normalizeSavedEnvelope = (
+    response: EncryptedMessageEnvelope | { message?: EncryptedMessageEnvelope; envelope?: EncryptedMessageEnvelope },
+  ): EncryptedMessageEnvelope | null => {
+    if ('payload' in response && response.payload) return response as EncryptedMessageEnvelope
+    return response.message || response.envelope || null
+  }
+
+  const sendEncryptedContent = async (
     toUserId: string,
-    plaintext: string,
+    content: SendableMessageContent,
     recipientPublicKey: string,
   ): Promise<DecryptedMessage> => {
-    const trimmed = plaintext.trim()
-    if (!trimmed) {
+    if (!content.plaintext) {
       throw new Error('Cannot send an empty message.')
     }
     if (!accessToken.value) {
       throw new Error('Not authenticated')
     }
-
-    if (!getActivePublicKey() && currentUser.value?.public_key) {
-      try {
-        await setActivePublicKey(currentUser.value.public_key)
-      } catch (err) {
-        console.warn('Failed to import own public key from profile', err)
-      }
+    if (!recipientPublicKey) {
+      throw new Error('Recipient public key missing.')
     }
 
-    const payload = await encryptMessage(trimmed, recipientPublicKey)
+    await ensureOwnPublicKey()
+
+    const payload = await encryptMessage(content.plaintext, recipientPublicKey)
 
     const wireBody = {
       to: toUserId,
@@ -616,7 +694,9 @@ export const useMessages = () => {
       id: `local-${Date.now()}`,
       senderId: currentUser.value?.id || 'me',
       recipientId: toUserId,
-      text: trimmed,
+      text: content.preview,
+      kind: content.kind || 'text',
+      attachment: content.attachment,
       createdAt: new Date().toISOString(),
       sentBySelf: true,
       status: 'sent',
@@ -624,19 +704,20 @@ export const useMessages = () => {
     messages.value = [...messages.value, optimistic]
 
     try {
-      const saved = await useApi<EncryptedMessageEnvelope>('/messages', {
+      const response = await useApi<EncryptedMessageEnvelope | { message?: EncryptedMessageEnvelope; envelope?: EncryptedMessageEnvelope }>('/messages', {
         method: 'POST',
         body: wireBody,
       })
+      const saved = normalizeSavedEnvelope(response)
 
       const idx = messages.value.findIndex((m) => m.id === optimistic.id)
       let finalMessage: DecryptedMessage = optimistic
       if (idx !== -1) {
         finalMessage = {
           ...optimistic,
-          id: saved.id,
-          createdAt: saved.created_at,
-          status: saved.delivered ? 'delivered' : 'sent',
+          id: saved?.id || optimistic.id,
+          createdAt: saved?.created_at || optimistic.createdAt,
+          status: saved?.delivered ? 'delivered' : 'sent',
         }
         const next = [...messages.value]
         next[idx] = finalMessage
@@ -665,6 +746,59 @@ export const useMessages = () => {
     }
   }
 
+  const sendMessage = async (
+    toUserId: string,
+    plaintext: string,
+    recipientPublicKey: string,
+  ): Promise<DecryptedMessage> => {
+    const trimmed = plaintext.trim()
+    return sendEncryptedContent(
+      toUserId,
+      {
+        plaintext: trimmed,
+        preview: trimmed,
+        kind: 'text',
+      },
+      recipientPublicKey,
+    )
+  }
+
+  const sendFileMessage = async (
+    toUserId: string,
+    file: File,
+    recipientPublicKey: string,
+  ): Promise<DecryptedMessage> => {
+    if (!file) {
+      throw new Error('Choose a file to send.')
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      throw new Error('Files must be smaller than 2 MB.')
+    }
+
+    const attachment: MessageAttachment = {
+      name: file.name || 'attachment',
+      mimeType: file.type || 'application/octet-stream',
+      size: file.size,
+      dataBase64: arrayBufferToBase64(await file.arrayBuffer()),
+    }
+    const encoded: EncodedFileMessage = {
+      __yarn_message_type: 'file',
+      version: 1,
+      file: attachment,
+    }
+
+    return sendEncryptedContent(
+      toUserId,
+      {
+        plaintext: JSON.stringify(encoded),
+        preview: attachmentPreview(attachment),
+        kind: 'file',
+        attachment,
+      },
+      recipientPublicKey,
+    )
+  }
+
   return {
     messages,
     ws,
@@ -677,6 +811,7 @@ export const useMessages = () => {
     loadHistory,
     clearMessages,
     sendMessage,
+    sendFileMessage,
     sendTypingEvent,
     sendReadReceipt,
     loadSidebar,
