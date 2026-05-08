@@ -199,8 +199,6 @@ const {
   loadHistory,
   clearMessages,
   sendMessage,
-  connectWS,
-  disconnectWS,
   sendTypingEvent,
   sendReadReceipt,
 } = useMessages()
@@ -358,8 +356,6 @@ const onSend = async () => {
 }
 
 onMounted(() => {
-  connectWS()
-
   if (typeof IntersectionObserver !== 'undefined' && scrollEl.value) {
     readObserver = new IntersectionObserver(
       (entries) => {
@@ -381,7 +377,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  disconnectWS()
   if (readObserver) {
     readObserver.disconnect()
     readObserver = null

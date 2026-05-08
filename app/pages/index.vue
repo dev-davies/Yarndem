@@ -19,13 +19,23 @@
 </template>
 
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted } from 'vue'
+
 const { activeContact, clearActiveContact } = useChat()
-const { clearMessages } = useMessages()
+const { clearMessages, connectWS, disconnectWS } = useMessages()
 
 const closeMobileChat = () => {
   clearActiveContact()
   clearMessages()
 }
+
+onMounted(() => {
+  connectWS()
+})
+
+onBeforeUnmount(() => {
+  disconnectWS()
+})
 
 definePageMeta({
   layout: false

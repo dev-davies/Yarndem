@@ -33,6 +33,14 @@ interface WSFrame<T = unknown> {
   data?: T
 }
 
+type MessageFramePayload =
+  | EncryptedMessageEnvelope
+  | {
+      message?: EncryptedMessageEnvelope
+      envelope?: EncryptedMessageEnvelope
+    }
+  | undefined
+
 interface ContactPresence {
   online: boolean
   lastSeen?: string
@@ -197,6 +205,26 @@ export const useMessages = () => {
     encryptedKeyForSelf: envelope.payload?.encryptedKeyForSelf || '',
   })
 
+  const isMessageFrame = (type: string): boolean => {
+    return [
+      'message',
+      'message.receive',
+      'message.received',
+      'message.created',
+      'message.new',
+      'new_message',
+    ].includes(type)
+  }
+
+  const getEnvelopeFromFrame = (frame: WSFrame): EncryptedMessageEnvelope | undefined => {
+    const raw = (frame.payload || frame.data) as MessageFramePayload
+    if (!raw) return undefined
+    if ('payload' in raw && raw.payload) return raw as EncryptedMessageEnvelope
+    if ('message' in raw && raw.message?.payload) return raw.message
+    if ('envelope' in raw && raw.envelope?.payload) return raw.envelope
+    return undefined
+  }
+
   const decryptEnvelope = async (
     envelope: EncryptedMessageEnvelope,
   ): Promise<DecryptedMessage> => {
@@ -227,7 +255,7 @@ export const useMessages = () => {
       console.warn('Cannot open WebSocket: no access token.')
       return null
     }
-    if (ws.value && ws.value.readyState === WebSocket.OPEN) {
+    if (ws.value && (ws.value.readyState === WebSocket.OPEN || ws.value.readyState === WebSocket.CONNECTING)) {
       return ws.value
     }
 
@@ -307,8 +335,8 @@ export const useMessages = () => {
         }
       }
 
-      if (frame.type === 'message.receive' || frame.type === 'message') {
-        const envelope = (frame.payload || frame.data) as EncryptedMessageEnvelope | undefined
+      if (isMessageFrame(frame.type)) {
+        const envelope = getEnvelopeFromFrame(frame)
         if (!envelope || !envelope.payload) {
           console.warn('[useMessages] Received frame without payload', frame)
           return
