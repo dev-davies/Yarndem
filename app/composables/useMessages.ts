@@ -449,6 +449,15 @@ export const useMessages = () => {
         return
       }
 
+      if (typeof frame?.type !== 'string') {
+        const maybeEnvelope = frame as unknown as EncryptedMessageEnvelope
+        if (maybeEnvelope?.payload && maybeEnvelope?.from_user_id && maybeEnvelope?.to_user_id) {
+          frame = { type: 'message', payload: maybeEnvelope }
+        } else {
+          return
+        }
+      }
+
       if (frame.type === 'typing') {
         const payload = (frame.payload || frame.data) as { sender_id?: string } | undefined
         const senderId = payload?.sender_id
