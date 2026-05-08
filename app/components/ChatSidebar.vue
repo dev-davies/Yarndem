@@ -1,10 +1,10 @@
 <template>
   <div class="h-full flex flex-col bg-yarn-bg overflow-hidden">
     <!-- Header with Search -->
-    <div class="p-6 space-y-6 sticky top-0 bg-yarn-bg/80 backdrop-blur-md z-10">
+    <div class="p-4 md:p-6 space-y-4 md:space-y-6 sticky top-0 bg-yarn-bg/90 backdrop-blur-md z-10">
       <div class="flex justify-between items-center">
-        <div>
-          <h1 class="text-2xl font-display font-semibold text-yarn-black tracking-tight">Messages</h1>
+        <div class="min-w-0">
+          <h1 class="text-xl md:text-2xl font-display font-semibold text-yarn-black tracking-tight">Messages</h1>
           <p v-if="currentUser" class="text-xs text-yarn-black/50 mt-1">Welcome, {{ currentUser.display_name || currentUser.username }}</p>
         </div>
         <button class="p-2 hover:bg-yarn-black/5 rounded-xl transition-colors" @click="focusSearch">
@@ -41,7 +41,7 @@
     </div>
 
     <!-- Search Results -->
-    <div v-if="hasQuery" class="flex-1 overflow-y-auto custom-scrollbar px-3 pb-6">
+    <div v-if="hasQuery" class="flex-1 overflow-y-auto custom-scrollbar px-2 md:px-3 pb-4 md:pb-6">
       <div class="px-3 mb-2 flex items-center justify-between">
         <span class="text-[10px] uppercase tracking-widest font-semibold text-yarn-black/40">
           Search Results
@@ -65,7 +65,7 @@
         <div
           v-for="user in searchResults"
           :key="user?.id || Math.random()"
-          class="relative flex items-center p-4 rounded-2xl cursor-pointer transition-all duration-300 group"
+          class="relative flex items-center p-3 md:p-4 rounded-2xl cursor-pointer transition-all duration-300 group"
           :class="[
             user && isActive(user)
               ? 'bg-yarn-surface border-l-4 border-yarn-terracotta shadow-sm shadow-yarn-black/5'
@@ -94,7 +94,7 @@
     </div>
 
     <!-- Conversation List -->
-    <div v-else class="flex-1 overflow-y-auto custom-scrollbar px-3">
+    <div v-else class="flex-1 overflow-y-auto custom-scrollbar px-2 md:px-3">
       <div v-if="isLoadingConversations" class="px-4 py-6 text-center text-xs text-yarn-black/40">
         Loading conversations…
       </div>
@@ -116,7 +116,7 @@
         <div
           v-for="conversation in conversations"
           :key="conversation?.id || Math.random()"
-          class="relative flex items-center p-4 rounded-2xl cursor-pointer transition-all duration-300 group"
+          class="relative flex items-center p-3 md:p-4 rounded-2xl cursor-pointer transition-all duration-300 group"
           :class="[
             conversation?.contact && isActive(conversation.contact)
               ? 'bg-yarn-surface border-l-4 border-yarn-terracotta shadow-sm shadow-yarn-black/5'
@@ -166,7 +166,7 @@
     </div>
 
     <!-- Footer / Vault Controls -->
-    <div class="border-t border-yarn-border bg-yarn-surface/60 px-4 py-4 flex items-center justify-between">
+    <div class="border-t border-yarn-border bg-yarn-surface/60 px-4 py-3 md:py-4 flex items-center justify-between">
       <div class="min-w-0">
         <p class="text-xs font-bold text-yarn-black truncate">
           {{ currentUser?.display_name || currentUser?.username || 'Signed out' }}
@@ -178,7 +178,7 @@
       <button
         type="button"
         :disabled="isLoggingOut"
-        class="ml-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-yarn-border bg-yarn-bg hover:border-yarn-terracotta hover:text-yarn-terracotta text-yarn-black/70 transition-colors duration-200 disabled:opacity-50"
+        class="ml-3 inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-yarn-border bg-yarn-bg hover:border-yarn-terracotta hover:text-yarn-terracotta text-yarn-black/70 transition-colors duration-200 disabled:opacity-50 flex-shrink-0"
         title="Sign out and wipe local vault"
         @click="onLogout"
       >

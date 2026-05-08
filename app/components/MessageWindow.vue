@@ -26,9 +26,19 @@
 
   <div v-else class="flex flex-col h-full bg-yarn-bg overflow-hidden">
     <!-- Header -->
-    <header class="p-6 border-b border-yarn-border bg-yarn-surface flex justify-between items-center z-10">
-      <div class="flex items-center space-x-4">
-        <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm">
+    <header class="px-3 py-3 sm:px-4 md:p-6 border-b border-yarn-border bg-yarn-surface flex justify-between items-center gap-3 z-10">
+      <div class="flex items-center gap-3 min-w-0">
+        <button
+          type="button"
+          class="md:hidden h-10 w-10 rounded-full border border-yarn-border bg-yarn-bg flex items-center justify-center text-yarn-black/70 active:scale-95 flex-shrink-0"
+          aria-label="Back to conversations"
+          @click="emit('back')"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+        <div class="relative h-10 w-10 md:h-12 md:w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-xs md:text-sm flex-shrink-0">
           {{ contactInitials }}
           <span
             class="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-yarn-surface"
@@ -36,10 +46,10 @@
             :title="activeContactStatusLabel"
           />
         </div>
-        <div>
-          <h2 class="text-base font-bold text-yarn-black">{{ contactDisplayName }}</h2>
+        <div class="min-w-0">
+          <h2 class="text-sm md:text-base font-bold text-yarn-black truncate">{{ contactDisplayName }}</h2>
           <p class="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
-            <span class="text-yarn-black/40">@{{ activeContact.username }}</span>
+            <span class="text-yarn-black/40 truncate">@{{ activeContact.username }}</span>
             <span :class="activeContactIsOnline ? 'text-emerald-600' : 'text-yarn-black/35'">
               {{ activeContactStatusLabel }}
             </span>
@@ -47,7 +57,7 @@
         </div>
       </div>
 
-      <div class="flex items-center px-4 py-1.5 bg-yarn-terracotta/10 rounded-full border border-yarn-terracotta/20">
+      <div class="hidden sm:flex items-center px-3 md:px-4 py-1.5 bg-yarn-terracotta/10 rounded-full border border-yarn-terracotta/20 flex-shrink-0">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-yarn-terracotta mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
         </svg>
@@ -56,7 +66,7 @@
     </header>
 
     <!-- Message Area -->
-    <div ref="scrollEl" class="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-[radial-gradient(#C05A3E05_1px,transparent_1px)] [background-size:20px_20px]">
+    <div ref="scrollEl" class="flex-1 overflow-y-auto px-3 py-4 sm:p-4 md:p-6 space-y-3 md:space-y-6 custom-scrollbar bg-[radial-gradient(#C05A3E05_1px,transparent_1px)] [background-size:20px_20px]">
       <div v-if="isLoadingHistory" class="flex justify-center py-8">
         <span class="text-xs text-yarn-black/40 uppercase tracking-widest">Decrypting messages…</span>
       </div>
@@ -77,7 +87,7 @@
         :class="message.sentBySelf ? 'justify-end' : 'justify-start'"
       >
         <div
-          class="max-w-[75%] shadow-sm px-5 py-4"
+          class="max-w-[86%] sm:max-w-[80%] md:max-w-[75%] shadow-sm px-4 py-3 md:px-5 md:py-4"
           :class="[
             message.sentBySelf
               ? 'bg-yarn-black text-white rounded-2xl rounded-br-none'
@@ -130,16 +140,16 @@
     </div>
 
     <!-- Input Area -->
-    <footer class="p-6 border-t border-yarn-border bg-yarn-surface">
+    <footer class="px-3 py-3 sm:px-4 md:p-6 border-t border-yarn-border bg-yarn-surface">
       <div v-if="sendError" class="max-w-5xl mx-auto mb-3 text-xs text-red-600 bg-red-50/80 border border-red-300/60 rounded-xl px-4 py-2">
         {{ sendError }}
       </div>
 
-      <form class="flex items-center space-x-4 max-w-5xl mx-auto" @submit.prevent="onSend">
+      <form class="flex items-center gap-2 md:gap-4 max-w-5xl mx-auto" @submit.prevent="onSend">
         <!-- Attachment Button -->
         <button
           type="button"
-          class="p-4 text-yarn-black/40 hover:text-yarn-black transition-colors duration-300"
+          class="hidden sm:flex p-3 md:p-4 text-yarn-black/40 hover:text-yarn-black transition-colors duration-300 flex-shrink-0"
           title="Attach file"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -153,7 +163,7 @@
             type="text"
             :placeholder="inputPlaceholder"
             :disabled="!canSend || isSending || isLoadingPublicKey"
-            class="w-full bg-yarn-bg border border-yarn-border rounded-full px-6 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-yarn-black/5 focus:border-yarn-black transition-all disabled:opacity-60"
+            class="w-full bg-yarn-bg border border-yarn-border rounded-full px-4 md:px-6 py-3 md:py-4 text-sm focus:outline-none focus:ring-2 focus:ring-yarn-black/5 focus:border-yarn-black transition-all disabled:opacity-60"
             @input="onTyping"
           />
         </div>
@@ -161,7 +171,7 @@
         <button
           type="submit"
           :disabled="!canSend || isSending || !newMessage.trim()"
-          class="p-4 rounded-full text-yarn-black hover:text-yarn-terracotta transition-colors duration-300 transform active:scale-90 disabled:opacity-40 disabled:hover:text-yarn-black"
+          class="p-3 md:p-4 rounded-full text-yarn-black hover:text-yarn-terracotta transition-colors duration-300 transform active:scale-90 disabled:opacity-40 disabled:hover:text-yarn-black flex-shrink-0"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
@@ -174,6 +184,10 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+
+const emit = defineEmits<{
+  back: []
+}>()
 
 const { activeContact, activePublicKey, isLoadingPublicKey } = useChat()
 const { currentUser } = useAuth()

@@ -1,9 +1,9 @@
 <template>
-  <div class="h-screen w-full flex overflow-hidden bg-yarn-bg font-sans selection:bg-yarn-terracotta selection:text-white">
+  <div class="h-[100dvh] w-full flex overflow-hidden bg-yarn-bg font-sans selection:bg-yarn-terracotta selection:text-white">
     <!-- Left Pane: Contacts Sidebar -->
     <aside 
       class="w-full md:w-[30%] md:max-w-[400px] h-full flex flex-col bg-yarn-bg border-r border-yarn-border z-20 transition-all duration-300"
-      :class="{ 'hidden md:flex': activeChat }"
+      :class="activeContact ? 'hidden md:flex' : 'flex'"
     >
       <ChatSidebar />
     </aside>
@@ -11,17 +11,21 @@
     <!-- Right Pane: Active Message Window -->
     <main 
       class="flex-1 h-full flex flex-col bg-yarn-surface relative overflow-hidden transition-all duration-300"
-      :class="{ 'hidden md:flex': !activeChat, 'flex': activeChat }"
+      :class="activeContact ? 'flex' : 'hidden md:flex'"
     >
-      <MessageWindow />
+      <MessageWindow @back="closeMobileChat" />
     </main>
   </div>
 </template>
 
-<script setup>
-import { ref } from 'vue'
+<script setup lang="ts">
+const { activeContact, clearActiveContact } = useChat()
+const { clearMessages } = useMessages()
 
-const activeChat = ref(false)
+const closeMobileChat = () => {
+  clearActiveContact()
+  clearMessages()
+}
 
 definePageMeta({
   layout: false

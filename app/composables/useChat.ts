@@ -150,6 +150,12 @@ export const useChat = () => {
     )
   }
 
+  const clearActiveContact = (): void => {
+    activeContact.value = null
+    activePublicKey.value = null
+    isLoadingPublicKey.value = false
+  }
+
   const loadConversations = async (): Promise<ChatResult<Conversation[]>> => {
     if (!accessToken.value) {
       return { success: false, error: 'Not authenticated' }
@@ -337,6 +343,7 @@ export const useChat = () => {
     searchUsers,
     clearSearch,
     setActiveContact,
+    clearActiveContact,
     upsertConversation,
     markConversationRead,
   }
