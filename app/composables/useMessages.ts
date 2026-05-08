@@ -77,6 +77,10 @@ export const useMessages = () => {
     return [me, otherUserId].sort().join(':')
   }
 
+  const getActiveChatUserId = (): string | null => {
+    return activeConversationUserId.value || activeContact.value?.id || null
+  }
+
   const messages = useState<DecryptedMessage[]>('messages:list', () => [])
   const ws = useState<WebSocket | null>('messages:ws', () => null)
   const isConnected = useState<boolean>('messages:wsConnected', () => false)
@@ -91,6 +95,20 @@ export const useMessages = () => {
 
   const isMine = (senderId: string): boolean => {
     return !!currentUser.value && currentUser.value.id === senderId
+  }
+
+  const appendMessageForActiveChat = (message: DecryptedMessage): void => {
+    const activeId = getActiveChatUserId()
+    if (!activeId) return
+
+    const activeIdText = String(activeId)
+    const belongsToActiveChat =
+      String(message.senderId) === activeIdText ||
+      String(message.recipientId) === activeIdText
+
+    if (!belongsToActiveChat) return
+    if (messages.value.some((m) => m.id === message.id)) return
+    messages.value = [...messages.value, message]
   }
 
   const setContactPresence = (userId: string, online: boolean, lastSeen?: string): void => {
@@ -300,11 +318,17 @@ export const useMessages = () => {
         const otherUserId = envelope.from_user_id === myId ? envelope.to_user_id : envelope.from_user_id
         setContactPresence(otherUserId, true)
         const decrypted = await decryptEnvelope(envelope)
-        const activeId = activeConversationUserId.value
+        const activeId = getActiveChatUserId()
         const involvesActive =
           !!activeId &&
-          (envelope.from_user_id === activeId || envelope.to_user_id === activeId)
+          (String(envelope.from_user_id) === String(activeId) ||
+            String(envelope.to_user_id) === String(activeId) ||
+            String(otherUserId) === String(activeId))
         const isIncomingForInactiveChat = !decrypted.sentBySelf && !involvesActive
+
+        if (involvesActive) {
+          appendMessageForActiveChat(decrypted)
+        }
 
         try {
           await saveLocalMessage(conversationKey(otherUserId, myId), decrypted as never)
@@ -345,9 +369,6 @@ export const useMessages = () => {
         })
 
         if (!involvesActive) return
-
-        if (messages.value.some((m) => m.id === decrypted.id)) return
-        messages.value = [...messages.value, decrypted]
       }
     }
 
