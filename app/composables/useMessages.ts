@@ -40,8 +40,11 @@ export const useMessages = () => {
   const { saveLocalMessage, getLocalMessages, getRecentContacts } = useStorage()
   const { conversations, setActiveContact } = useChat()
 
-  const conversationKey = (otherUserId: string): string => {
-    const me = currentUser.value?.id || 'me'
+  const getMyId = (): string | null => currentUser.value?.id ?? null
+
+  const conversationKey = (otherUserId: string, myId?: string | null): string => {
+    const me = myId ?? getMyId()
+    if (!me) return 'unknown:' + otherUserId
     return [me, otherUserId].sort().join(':')
   }
 
@@ -180,7 +183,7 @@ export const useMessages = () => {
         const decrypted = await decryptEnvelope(envelope)
 
         try {
-          await saveLocalMessage(conversationKey(otherUserId), decrypted as never)
+          await saveLocalMessage(conversationKey(otherUserId, myId), decrypted as never)
         } catch (err) {
           console.error('Failed to archive incoming message', err)
         }
@@ -254,7 +257,7 @@ export const useMessages = () => {
     }
 
     activeConversationUserId.value = userId
-    const convoKey = conversationKey(userId)
+    const convoKey = conversationKey(userId, getMyId())
 
     const cached = await getLocalMessages(convoKey)
     if (cached.length > 0) {
@@ -429,7 +432,7 @@ export const useMessages = () => {
       },
     }
 
-    const convoKey = conversationKey(toUserId)
+    const convoKey = conversationKey(toUserId, getMyId())
     const optimistic: DecryptedMessage = {
       id: `local-${Date.now()}`,
       senderId: currentUser.value?.id || 'me',
