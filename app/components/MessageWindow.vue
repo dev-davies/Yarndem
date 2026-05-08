@@ -66,9 +66,17 @@
     </header>
 
     <!-- Message Area -->
-    <div ref="scrollEl" class="flex-1 overflow-y-auto px-3 py-4 sm:p-4 md:p-6 space-y-3 md:space-y-6 custom-scrollbar bg-[radial-gradient(#C05A3E05_1px,transparent_1px)] [background-size:20px_20px]">
+    <div
+      ref="scrollEl"
+      class="flex-1 overflow-y-auto px-3 py-4 sm:p-4 md:p-6 space-y-3 md:space-y-6 custom-scrollbar bg-[radial-gradient(#C05A3E05_1px,transparent_1px)] [background-size:20px_20px]"
+      @scroll.passive="onScroll"
+    >
       <div v-if="isLoadingHistory" class="flex justify-center py-8">
         <span class="text-xs text-yarn-black/40 uppercase tracking-widest">Decrypting messages...</span>
+      </div>
+
+      <div v-else-if="isLoadingOlderMessages" class="flex justify-center py-2">
+        <span class="text-[10px] text-yarn-black/35 uppercase tracking-widest">Loading older messages...</span>
       </div>
 
       <div v-else-if="messages.length === 0" class="flex justify-center py-12">
@@ -231,11 +239,14 @@ const {
   isConnected,
   contactPresence,
   loadHistory,
+  loadOlderMessages,
   clearMessages,
   sendMessage,
   sendFileMessage,
   sendTypingEvent,
   sendReadReceipt,
+  isLoadingOlderMessages,
+  hasMoreHistory,
 } = useMessages()
 
 const ackedReadIds = ref<Set<string>>(new Set())
@@ -247,6 +258,7 @@ const isLoadingHistory = ref(false)
 const sendError = ref('')
 const scrollEl = ref<HTMLDivElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
+const isPreservingOlderScroll = ref(false)
 
 const contactDisplayName = computed(() => {
   if (!activeContact.value) return ''
@@ -347,9 +359,45 @@ watch(
 watch(
   () => messages.value.length,
   () => {
+    if (isPreservingOlderScroll.value) return
     scrollToBottom()
   },
 )
+
+const maybeLoadOlderMessages = async () => {
+  const el = scrollEl.value
+  const contact = activeContact.value
+  if (!el || !contact || isLoadingHistory.value || isLoadingOlderMessages.value || !hasMoreHistory.value) {
+    return
+  }
+  if (el.scrollTop > 96) return
+
+  const previousScrollHeight = el.scrollHeight
+  const previousScrollTop = el.scrollTop
+  isPreservingOlderScroll.value = true
+  sendError.value = ''
+
+  try {
+    await loadOlderMessages(contact.id)
+    await nextTick()
+    if (scrollEl.value && activeContact.value?.id === contact.id) {
+      scrollEl.value.scrollTop =
+        scrollEl.value.scrollHeight - previousScrollHeight + previousScrollTop
+    }
+  } catch (err) {
+    const msg = (err as { data?: { message?: string }; message?: string })?.data?.message
+      || (err as { message?: string })?.message
+      || 'Failed to load older messages.'
+    sendError.value = msg
+  } finally {
+    await nextTick()
+    isPreservingOlderScroll.value = false
+  }
+}
+
+const onScroll = () => {
+  void maybeLoadOlderMessages()
+}
 
 const onTyping = () => {
   if (activeContact.value) {

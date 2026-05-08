@@ -36,6 +36,16 @@ interface EncryptedMessageEnvelope {
   created_at: string
 }
 
+interface MessageHistoryResponse {
+  messages?: EncryptedMessageEnvelope[]
+  data?: EncryptedMessageEnvelope[]
+  has_more?: boolean
+  hasMore?: boolean
+  next_cursor?: string | null
+  nextCursor?: string | null
+  cursor?: string | null
+}
+
 interface WSFrame<T = unknown> {
   type: string
   payload?: T
@@ -106,6 +116,7 @@ export const useMessages = () => {
   const { conversations, activeContact, upsertConversation } = useChat()
 
   const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024
+  const MESSAGE_PAGE_SIZE = 50
 
   const getMyId = (): string | null => currentUser.value?.id ?? null
 
@@ -124,6 +135,9 @@ export const useMessages = () => {
   const isConnected = useState<boolean>('messages:wsConnected', () => false)
   const activeConversationUserId = useState<string | null>('messages:activeUser', () => null)
   const isContactTyping = useState<boolean>('messages:isContactTyping', () => false)
+  const isLoadingOlderMessages = useState<boolean>('messages:isLoadingOlder', () => false)
+  const hasMoreHistory = useState<boolean>('messages:hasMoreHistory', () => true)
+  const historyCursor = useState<string | null>('messages:historyCursor', () => null)
   const contactPresence = useState<Record<string, ContactPresence>>('messages:contactPresence', () => ({}))
 
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -234,6 +248,79 @@ export const useMessages = () => {
     encryptedKey: envelope.payload?.encryptedKey || '',
     encryptedKeyForSelf: envelope.payload?.encryptedKeyForSelf || '',
   })
+
+  const normalizeHistoryResponse = (
+    response: EncryptedMessageEnvelope[] | MessageHistoryResponse,
+  ): {
+    messages: EncryptedMessageEnvelope[]
+    hasMore?: boolean
+    nextCursor?: string | null
+  } => {
+    if (Array.isArray(response)) {
+      return {
+        messages: response,
+        hasMore: response.length >= MESSAGE_PAGE_SIZE,
+        nextCursor: null,
+      }
+    }
+
+    const list = response.messages || response.data || []
+    return {
+      messages: list,
+      hasMore: response.has_more ?? response.hasMore ?? (list.length >= MESSAGE_PAGE_SIZE),
+      nextCursor: response.next_cursor ?? response.nextCursor ?? response.cursor ?? null,
+    }
+  }
+
+  const mergeMessages = (
+    current: DecryptedMessage[],
+    incoming: DecryptedMessage[],
+  ): DecryptedMessage[] => {
+    return [...current, ...incoming]
+      .filter((m, idx, arr) => arr.findIndex((x) => x.id === m.id) === idx)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  }
+
+  const oldestLoadedMessage = (): DecryptedMessage | undefined => {
+    return messages.value
+      .filter((message) => !message.id.startsWith('local-'))
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())[0]
+  }
+
+  const loadHistoryPage = async (
+    userId: string,
+    options: { older?: boolean } = {},
+  ): Promise<{
+    messages: EncryptedMessageEnvelope[]
+    hasMore?: boolean
+    nextCursor?: string | null
+  }> => {
+    const query: Record<string, string | number> = {
+      limit: MESSAGE_PAGE_SIZE,
+    }
+
+    if (options.older) {
+      if (historyCursor.value) {
+        query.cursor = historyCursor.value
+      } else {
+        const oldest = oldestLoadedMessage()
+        if (oldest) {
+          query.before = oldest.createdAt
+          query.before_id = oldest.id
+        }
+      }
+    }
+
+    const response = await useApi<EncryptedMessageEnvelope[] | MessageHistoryResponse>(
+      `/conversations/${userId}/messages`,
+      {
+        method: 'GET',
+        query,
+      },
+    )
+
+    return normalizeHistoryResponse(response)
+  }
 
   const attachmentPreview = (attachment: MessageAttachment): string => {
     const label = attachment.mimeType.startsWith('image/') ? 'Image' : 'File'
@@ -502,11 +589,13 @@ export const useMessages = () => {
     }
 
     activeConversationUserId.value = userId
+    hasMoreHistory.value = true
+    historyCursor.value = null
     const convoKey = conversationKey(userId, getMyId())
 
     const cached = await getLocalMessages(convoKey)
     if (cached.length > 0) {
-      messages.value = cached as DecryptedMessage[]
+      messages.value = cached.slice(-MESSAGE_PAGE_SIZE) as DecryptedMessage[]
     } else {
       messages.value = []
     }
@@ -514,12 +603,12 @@ export const useMessages = () => {
     const cachedIds = new Set(cached.map((m) => m.id))
 
     try {
-      const response = await useApi<EncryptedMessageEnvelope[] | { messages: EncryptedMessageEnvelope[] }>(
-        `/conversations/${userId}/messages`,
-        { method: 'GET' },
-      )
+      const response = await loadHistoryPage(userId)
 
-      const list = Array.isArray(response) ? response : response?.messages ?? []
+      const list = response.messages
+      hasMoreHistory.value = !!response.hasMore
+      historyCursor.value = response.nextCursor || null
+
       const fresh = list.filter((env) => !cachedIds.has(env.id))
       if (fresh.length === 0) {
         return messages.value
@@ -531,15 +620,51 @@ export const useMessages = () => {
         decrypted.map((m) => saveLocalMessage(convoKey, m as never)),
       )
 
-      const merged = [...messages.value, ...decrypted]
-        .filter((m, idx, arr) => arr.findIndex((x) => x.id === m.id) === idx)
-        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-
-      messages.value = merged
-      return merged
+      messages.value = mergeMessages(messages.value, decrypted)
+      return messages.value
     } catch (err) {
       console.error('Failed to fetch fresh history', err)
       return messages.value
+    }
+  }
+
+  const loadOlderMessages = async (userId?: string): Promise<DecryptedMessage[]> => {
+    const targetUserId = userId || getActiveChatUserId()
+    if (!targetUserId || isLoadingOlderMessages.value || !hasMoreHistory.value) {
+      return messages.value
+    }
+    if (!accessToken.value) {
+      throw new Error('Not authenticated')
+    }
+
+    isLoadingOlderMessages.value = true
+    try {
+      const response = await loadHistoryPage(targetUserId, { older: true })
+      hasMoreHistory.value = !!response.hasMore
+      historyCursor.value = response.nextCursor || null
+
+      const existingIds = new Set(messages.value.map((m) => m.id))
+      const fresh = response.messages.filter((env) => !existingIds.has(env.id))
+      if (fresh.length === 0) {
+        if (response.messages.length < MESSAGE_PAGE_SIZE && !response.nextCursor) {
+          hasMoreHistory.value = false
+        }
+        return messages.value
+      }
+
+      const decrypted = await Promise.all(fresh.map((env) => decryptEnvelope(env)))
+      const convoKey = conversationKey(targetUserId, getMyId())
+      await Promise.all(
+        decrypted.map((m) => saveLocalMessage(convoKey, m as never)),
+      )
+
+      messages.value = mergeMessages(decrypted, messages.value)
+      return messages.value
+    } catch (err) {
+      console.error('Failed to fetch older history', err)
+      throw err
+    } finally {
+      isLoadingOlderMessages.value = false
     }
   }
 
@@ -547,6 +672,9 @@ export const useMessages = () => {
     messages.value = []
     activeConversationUserId.value = null
     isContactTyping.value = false
+    isLoadingOlderMessages.value = false
+    hasMoreHistory.value = true
+    historyCursor.value = null
     if (typingTimeout) {
       clearTimeout(typingTimeout)
       typingTimeout = null
@@ -806,9 +934,12 @@ export const useMessages = () => {
     contactPresence,
     activeConversationUserId,
     isContactTyping,
+    isLoadingOlderMessages,
+    hasMoreHistory,
     connectWS,
     disconnectWS,
     loadHistory,
+    loadOlderMessages,
     clearMessages,
     sendMessage,
     sendFileMessage,
