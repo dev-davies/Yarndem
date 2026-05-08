@@ -1,3 +1,4 @@
+
 <template>
   <div v-if="!activeContact" class="flex items-center justify-center h-full bg-yarn-bg">
     <div v-if="currentUser" class="text-center px-8 max-w-md">
