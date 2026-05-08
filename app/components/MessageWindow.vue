@@ -28,12 +28,22 @@
     <!-- Header -->
     <header class="p-6 border-b border-yarn-border bg-yarn-surface flex justify-between items-center z-10">
       <div class="flex items-center space-x-4">
-        <div class="h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm">
+        <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm">
           {{ contactInitials }}
+          <span
+            class="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-yarn-surface"
+            :class="activeContactIsOnline ? 'bg-emerald-500' : 'bg-yarn-black/25'"
+            :title="activeContactStatusLabel"
+          />
         </div>
         <div>
           <h2 class="text-base font-bold text-yarn-black">{{ contactDisplayName }}</h2>
-          <p class="text-[10px] text-yarn-black/40 font-bold uppercase tracking-widest">@{{ activeContact.username }}</p>
+          <p class="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
+            <span class="text-yarn-black/40">@{{ activeContact.username }}</span>
+            <span :class="activeContactIsOnline ? 'text-emerald-600' : 'text-yarn-black/35'">
+              {{ activeContactStatusLabel }}
+            </span>
+          </p>
         </div>
       </div>
 
@@ -170,6 +180,8 @@ const { currentUser } = useAuth()
 const {
   messages,
   isContactTyping,
+  isConnected,
+  contactPresence,
   loadHistory,
   clearMessages,
   sendMessage,
@@ -203,6 +215,21 @@ const contactInitials = computed(() => {
     .slice(0, 2)
     .join('')
     .toUpperCase()
+})
+
+const activeContactPresence = computed(() => {
+  const contactId = activeContact.value?.id
+  return contactId ? contactPresence.value[contactId] : undefined
+})
+
+const activeContactIsOnline = computed(() => {
+  return !!isConnected.value && !!activeContactPresence.value?.online
+})
+
+const activeContactStatusLabel = computed(() => {
+  if (!isConnected.value) return 'Offline'
+  if (activeContactIsOnline.value) return 'Online'
+  return 'Offline'
 })
 
 const canSend = computed(() => {

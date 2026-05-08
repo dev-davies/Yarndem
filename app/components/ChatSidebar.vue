@@ -76,10 +76,17 @@
           <template v-if="user && user.id">
             <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm flex-shrink-0">
               {{ getInitials(user.display_name || user.username) }}
+              <span
+                class="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-yarn-bg"
+                :class="isUserOnline(user.id) ? 'bg-emerald-500' : 'bg-yarn-black/20'"
+                :title="isUserOnline(user.id) ? 'Online' : 'Offline'"
+              />
             </div>
             <div class="ml-4 flex-1 min-w-0">
               <h3 class="text-sm font-bold text-yarn-black truncate">{{ user.display_name || user.username }}</h3>
-              <p class="text-xs text-yarn-black/40 truncate mt-1">@{{ user.username }}</p>
+              <p class="text-xs text-yarn-black/40 truncate mt-1">
+                @{{ user.username }} - {{ isUserOnline(user.id) ? 'Online' : 'Offline' }}
+              </p>
             </div>
           </template>
         </div>
@@ -121,6 +128,11 @@
             <!-- Avatar -->
             <div class="relative h-12 w-12 rounded-full bg-yarn-stone border border-yarn-border flex items-center justify-center text-yarn-black font-semibold text-sm flex-shrink-0">
               {{ getInitials(conversation.contact.display_name || conversation.contact.username) }}
+              <span
+                class="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-yarn-bg"
+                :class="isUserOnline(conversation.contact.id) ? 'bg-emerald-500' : 'bg-yarn-black/20'"
+                :title="isUserOnline(conversation.contact.id) ? 'Online' : 'Offline'"
+              />
             </div>
 
             <!-- Content -->
@@ -137,7 +149,7 @@
                 class="text-xs truncate mt-1"
                 :class="isActive(conversation.contact) ? 'text-yarn-black/60' : 'text-yarn-black/40'"
               >
-                @{{ conversation.contact.username }}
+                @{{ conversation.contact.username }} - {{ isUserOnline(conversation.contact.id) ? 'Online' : 'Offline' }}
               </p>
             </div>
           </template>
@@ -191,6 +203,7 @@ const {
 } = useChat()
 
 const { currentUser, logout } = useAuth()
+const { isConnected, contactPresence } = useMessages()
 const isLoggingOut = ref(false)
 const searchInput = ref<HTMLInputElement | null>(null)
 
@@ -246,6 +259,10 @@ const onSelectUser = async (user: Contact) => {
 
 const isActive = (user: Contact | null | undefined): boolean => {
   return !!user && !!activeContact.value && activeContact.value.id === user.id
+}
+
+const isUserOnline = (userId: string): boolean => {
+  return !!isConnected.value && !!contactPresence.value[userId]?.online
 }
 
 const getInitials = (name: string): string => {

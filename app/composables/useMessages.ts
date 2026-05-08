@@ -33,6 +33,29 @@ interface WSFrame<T = unknown> {
   data?: T
 }
 
+interface ContactPresence {
+  online: boolean
+  lastSeen?: string
+}
+
+type PresencePayload =
+  | {
+      user_id?: string
+      userId?: string
+      id?: string
+      sender_id?: string
+      online?: boolean
+      is_online?: boolean
+      status?: string
+      last_seen?: string
+      lastSeen?: string
+      users?: PresencePayload[]
+      online_user_ids?: string[]
+      offline_user_ids?: string[]
+    }
+  | PresencePayload[]
+  | undefined
+
 export const useMessages = () => {
   const accessToken = useCookie<string | null>('access_token')
   const { encryptMessage, decryptMessage, getActivePublicKey, setActivePublicKey } = useCrypto()
@@ -53,6 +76,7 @@ export const useMessages = () => {
   const isConnected = useState<boolean>('messages:wsConnected', () => false)
   const activeConversationUserId = useState<string | null>('messages:activeUser', () => null)
   const isContactTyping = useState<boolean>('messages:isContactTyping', () => false)
+  const contactPresence = useState<Record<string, ContactPresence>>('messages:contactPresence', () => ({}))
 
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let manuallyClosed = false
@@ -61,6 +85,59 @@ export const useMessages = () => {
 
   const isMine = (senderId: string): boolean => {
     return !!currentUser.value && currentUser.value.id === senderId
+  }
+
+  const setContactPresence = (userId: string, online: boolean, lastSeen?: string): void => {
+    if (!userId || userId === getMyId()) return
+    contactPresence.value = {
+      ...contactPresence.value,
+      [userId]: {
+        online,
+        lastSeen: lastSeen || contactPresence.value[userId]?.lastSeen,
+      },
+    }
+  }
+
+  const normalizePresence = (payload: PresencePayload, frameType: string): boolean => {
+    if (!payload) return false
+
+    if (Array.isArray(payload)) {
+      payload.forEach((item) => normalizePresence(item, frameType))
+      return true
+    }
+
+    if (Array.isArray(payload.online_user_ids)) {
+      payload.online_user_ids.forEach((id) => setContactPresence(id, true))
+    }
+    if (Array.isArray(payload.offline_user_ids)) {
+      payload.offline_user_ids.forEach((id) => setContactPresence(id, false, new Date().toISOString()))
+    }
+    if (Array.isArray(payload.users)) {
+      payload.users.forEach((user) => normalizePresence(user, frameType))
+    }
+
+    const userId = payload.user_id || payload.userId || payload.id || payload.sender_id
+    if (!userId) {
+      return !!payload.online_user_ids?.length || !!payload.offline_user_ids?.length || !!payload.users?.length
+    }
+
+    const status = payload.status?.toLowerCase()
+    const online = typeof payload.online === 'boolean'
+      ? payload.online
+      : typeof payload.is_online === 'boolean'
+        ? payload.is_online
+        : frameType.includes('offline')
+          ? false
+          : frameType.includes('online')
+            ? true
+            : status === 'online'
+
+    if (status === 'offline' || typeof payload.online === 'boolean' || typeof payload.is_online === 'boolean' || frameType.includes('online') || frameType.includes('offline')) {
+      setContactPresence(userId, online, payload.last_seen || payload.lastSeen)
+      return true
+    }
+
+    return false
   }
 
   const toEncryptedPayload = (envelope: EncryptedMessageEnvelope): EncryptedMessagePayload => ({
@@ -133,7 +210,7 @@ export const useMessages = () => {
     }
 
     socket.onmessage = async (event: MessageEvent) => {
-      let frame: WSFrame<EncryptedMessageEnvelope>
+      let frame: WSFrame
       try {
         frame = JSON.parse(event.data)
       } catch (err) {
@@ -144,6 +221,9 @@ export const useMessages = () => {
       if (frame.type === 'typing') {
         const payload = (frame.payload || frame.data) as { sender_id?: string } | undefined
         const senderId = payload?.sender_id
+        if (senderId) {
+          setContactPresence(senderId, true)
+        }
         const activeId = activeConversationUserId.value
         if (!senderId || !activeId || senderId !== activeId) return
 
@@ -171,6 +251,12 @@ export const useMessages = () => {
         return
       }
 
+      if (frame.type.startsWith('presence') || frame.type.startsWith('user.') || frame.type === 'online' || frame.type === 'offline') {
+        if (normalizePresence((frame.payload || frame.data) as PresencePayload, frame.type)) {
+          return
+        }
+      }
+
       if (frame.type === 'message.receive' || frame.type === 'message') {
         const envelope = (frame.payload || frame.data) as EncryptedMessageEnvelope | undefined
         if (!envelope || !envelope.payload) {
@@ -180,6 +266,7 @@ export const useMessages = () => {
 
         const myId = currentUser.value?.id
         const otherUserId = envelope.from_user_id === myId ? envelope.to_user_id : envelope.from_user_id
+        setContactPresence(otherUserId, true)
         const decrypted = await decryptEnvelope(envelope)
 
         try {
@@ -249,6 +336,7 @@ export const useMessages = () => {
       ws.value = null
     }
     isConnected.value = false
+    contactPresence.value = {}
   }
 
   const loadHistory = async (userId: string): Promise<DecryptedMessage[]> => {
@@ -480,6 +568,7 @@ export const useMessages = () => {
     messages,
     ws,
     isConnected,
+    contactPresence,
     activeConversationUserId,
     isContactTyping,
     connectWS,
